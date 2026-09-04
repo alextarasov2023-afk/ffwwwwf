@@ -86,7 +86,21 @@ jobs:
         run: ls -la libs
 
       - name: Build (remapJar)
-        run: gradle remapJar --no-daemon -Dorg.gradle.jvmargs=-Xmx2G
+        run: |
+          set +e
+          gradle remapJar --no-daemon --stacktrace -Dorg.gradle.jvmargs=-Xmx2G > build.log 2>&1
+          CODE=$?
+          tail -n 80 build.log
+          if [ $CODE -ne 0 ]; then
+            git config user.name "arena-ai-coding-agent[bot]"
+            git config user.email "arena-ai-coding-agent[bot]@users.noreply.github.com"
+            mkdir -p .ci
+            cp build.log .ci/build-failed.log
+            git add .ci/build-failed.log
+            git commit -m "ci: лог неудавшейся сборки [skip ci]" || true
+            git push || true
+          fi
+          exit $CODE
 
       - name: Upload mod jar
         uses: actions/upload-artifact@v4
