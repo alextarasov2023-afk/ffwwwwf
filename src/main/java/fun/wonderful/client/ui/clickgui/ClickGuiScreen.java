@@ -69,6 +69,83 @@ public class ClickGuiScreen extends Screen {
         return ThemePanel.accentSolid();
     }
 
+    /**
+     * Дрейфующие акцентные свечения за окнами: два больших мягких пятна
+     * (верхнее и нижнее) медленно плывут по эллипсу, окрашиваясь темой.
+     */
+    private void renderAura(MatrixStack ms, float alpha) {
+        if (alpha < 0.03f) return;
+        float t = (System.currentTimeMillis() % 14000L) / 14000f;
+        float ang = t * (float) (Math.PI * 2);
+        float dx = (float) Math.sin(ang) * (this.width * 0.16f);
+        float dy = (float) Math.cos(ang) * (this.height * 0.10f);
+
+        float s1 = Math.min(300f, this.width * 0.30f);
+        int c1 = ColorUtils.applyAlpha(ThemePanel.accent(this.height * 0.30f), 0.15f * alpha);
+        RenderUtils.drawShadow(ms, this.width * 0.30f - s1 / 2f + dx, this.height * 0.32f - s1 / 2f + dy,
+                s1, s1, s1 / 2f, s1 * 0.42f, c1, c1, c1, c1);
+
+        float s2 = Math.min(340f, this.width * 0.34f);
+        int c2 = ColorUtils.applyAlpha(ThemePanel.accent(this.height * 0.72f), 0.13f * alpha);
+        RenderUtils.drawShadow(ms, this.width * 0.72f - s2 / 2f - dx, this.height * 0.72f - s2 / 2f - dy,
+                s2, s2, s2 / 2f, s2 * 0.40f, c2, c2, c2, c2);
+    }
+
+    /**
+     * Бренд-бар сверху по центру: пульсирующая точка + имя клиента + версия
+     * на блюр-панели в общем стиле. Появляется вместе с окнами.
+     */
+    private void renderBrand(MatrixStack ms, float alpha) {
+        if (alpha < 0.03f) return;
+        Font f15 = Fonts.getFont("suisse", 15);
+        Font f10 = Fonts.getFont("suisse", 10);
+        if (f15 == null || f10 == null) return;
+
+        String name = "wonderful";
+        String ver = "v1.0";
+        float nameW = DropdownWindow.tw(15, name);
+        float verW = DropdownWindow.tw(10, ver);
+        float dotR = 2.6f;
+        float pad = 12f;
+        float w = dotR * 2f + 9f + nameW + 9f + verW + pad * 2f;
+        float h = 25f;
+        float x = (this.width - w) / 2f;
+        float y = 8f;
+        float rise = (1f - alpha) * 8f;
+
+        RenderUtils.drawShadow(ms, x, y + rise + 1f, w, h, 8f, 10f,
+                ColorUtils.applyAlpha(ColorUtils.rgba(0, 0, 0, 255), 0.42f * alpha));
+        RenderUtils.drawBlur(ms, x, y + rise, w, h, 8f, 10f,
+                ColorUtils.rgba(7, 11, 21, (int) (165 * alpha)));
+        RenderUtils.drawRoundedRect(ms, x, y + rise, w, h, 8f,
+                ColorUtils.rgba(12, 15, 24, (int) (225 * alpha)));
+        int acT = ThemePanel.accent(y + rise + 3f);
+        int acB = ThemePanel.accent(y + rise + h - 3f);
+        RenderUtils.drawRoundedRectOutline(ms, x, y + rise, w, h, 8f, 1f,
+                ColorUtils.applyAlpha(acT, (int) (150 * alpha)), ColorUtils.applyAlpha(acT, (int) (150 * alpha)),
+                ColorUtils.applyAlpha(acB, (int) (100 * alpha)), ColorUtils.applyAlpha(acB, (int) (100 * alpha)));
+
+        // Пульсирующая точка слева
+        float pulse = 0.5f + 0.5f * (float) Math.sin(System.currentTimeMillis() / 850.0);
+        float dcx = x + pad + dotR;
+        float dcy = y + rise + h / 2f;
+        RenderUtils.drawRoundCircle(ms, dcx, dcy, dotR * (1.9f + 0.5f * pulse),
+                ColorUtils.applyAlpha(acT, 0.16f + 0.10f * pulse * alpha));
+        RenderUtils.drawRoundCircle(ms, dcx, dcy, dotR * (1f + 0.14f * pulse),
+                ColorUtils.applyAlpha(acT, (0.75f + 0.25f * pulse) * alpha));
+
+        float cy = y + rise + h / 2f;
+        DropdownWindow.text(ms, 15, name, dcx + dotR + 9f, cy - DropdownWindow.fh(15) / 2f,
+                ColorUtils.rgba(242, 244, 250, (int) (250 * alpha)));
+        DropdownWindow.text(ms, 10, ver, x + w - pad - verW, cy - DropdownWindow.fh(10) / 2f + 1f,
+                ColorUtils.applyAlpha(acT, 0.85f * alpha));
+
+        // Градиентная линия-подчерк внизу панели
+        RenderUtils.drawGradientRect(ms, x + pad, y + rise + h - 2.2f, w - pad * 2f, 1.1f, 1f,
+                ColorUtils.applyAlpha(acT, 0.55f * alpha),
+                ColorUtils.applyAlpha(acB, 0.55f * alpha), true);
+    }
+
     /** Акцент с учётом градиента и позиции по экрану (для использования в разных частях GUI). */
     public static int accentAt(float y) {
         return ThemePanel.accent(y);
@@ -76,13 +153,13 @@ public class ClickGuiScreen extends Screen {
 
     private void initPositions() {
         positionsInitialized = true;
-        final float gap = 8f;
+        float gap = 8f;
         final float marginX = 6f;
         final float leftReserve = ThemePanel.W + 12f; // место слева под панель тем
 
         int n = windows.size();
         float totalW = n * WIN_W + (n - 1) * gap;
-        float rowY = 20f;
+        float rowY = 44f; // ниже бренд-бара
         float availW = this.width - marginX * 2 - leftReserve;
 
         if (totalW <= availW) {
@@ -150,8 +227,10 @@ public class ClickGuiScreen extends Screen {
         }
 
         if (maxP > 0.01f || !closing) {
-            RenderUtils.drawRoundedRect(ms, -2, -2, this.width + 4, this.height + 4, 0,
-                    ColorUtils.rgba(2, 4, 9, (int) (165 * maxP)));
+            // Матовое стекло: блюр всего экрана поверх мира + тёмный тинт
+            RenderUtils.drawBlur(ms, -2, -2, this.width + 4, this.height + 4, 0f, 18f,
+                    ColorUtils.rgba(4, 7, 14, (int) (150 * maxP)));
+            renderAura(ms, maxP);
         }
 
         for (DropdownWindow w : windows) {
@@ -160,6 +239,7 @@ public class ClickGuiScreen extends Screen {
 
         ThemePanel.render(context, mouseX, mouseY, maxP);
 
+        renderBrand(ms, maxP);
         renderTooltip(ms, windows, mouseX, mouseY);
         renderFilterBar(ms, mouseX, mouseY, maxP);
 
@@ -488,11 +568,8 @@ public class ClickGuiScreen extends Screen {
         filterActive = false;
     }
 
-        @Override
+    @Override
     public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
-        // Убрана 1-секундная чёрная затычка при первом открытии
-        // context.fill(0, 0, this.width, this.height, ColorUtils.rgba(2, 4, 9, 255));
-        // Убрали задержку отрисовки, рисуем сразу активный фон
-        context.fill(0, 0, this.width, this.height, ColorUtils.rgba(2, 4, 9, 255));
+        // Фон — матовое стекло из render() (блюр + тинт); отдельно затемнять не нужно
     }
 }

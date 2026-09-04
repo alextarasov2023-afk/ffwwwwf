@@ -626,7 +626,8 @@ public final class TestModules {
                     new BooleanSetting("Server", true),
                     new BooleanSetting("Coordinates", true),
                     new BooleanSetting("Ping", true),
-                    new BooleanSetting("Time", true)
+                    new BooleanSetting("Time", true),
+                    new BooleanSetting("Список модулей", true)
             );
         }
 
@@ -641,6 +642,7 @@ public final class TestModules {
         public boolean showCoords() { BooleanSetting s = bool("Coordinates"); return s != null && s.isState(); }
         public boolean showPing() { BooleanSetting s = bool("Ping"); return s != null && s.isState(); }
         public boolean showTime() { BooleanSetting s = bool("Time"); return s != null && s.isState(); }
+        public boolean showArrayList() { BooleanSetting s = bool("Список модулей"); return s == null || s.isState(); }
     }
 
     public static class Chams extends Module {

@@ -33,5 +33,8 @@ public class InitializeStorage implements QClient {
 
         // Рендер уведомлений (слушает EventRender.Default)
         new NotificationRenderer();
+
+        // Список активных модулей (ArrayList, слушает EventRender.Default)
+        new ArrayListStorage();
     }
 }

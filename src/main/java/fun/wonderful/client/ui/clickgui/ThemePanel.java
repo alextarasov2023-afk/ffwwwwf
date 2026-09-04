@@ -335,7 +335,7 @@ public class ThemePanel {
         popAnim.update(paletteTarget >= 0 ? 1f : 0f);
 
         panelX = 6f;
-        panelY = 20f - (1f - epRaw) * 26f;
+        panelY = 44f - (1f - epRaw) * 26f;
 
         float contentH = contentHeight();
         float availH = screenH - panelY - 12f;
@@ -504,8 +504,9 @@ public class ThemePanel {
         float frac = MathHelper.clamp((value - min) / Math.max(0.0001f, max - min), 0f, 1f);
         float fw = w * frac;
         if (fw > 0.5f) {
-            RenderUtils.drawRoundedRect(ms, x, trackY, fw, trackH, trackH / 2f,
-                    ColorUtils.applyAlpha(chanCol, 0.92f * effA));
+            int fillL = ColorUtils.applyAlpha(chanCol, 0.60f * effA);
+            int fillR = ColorUtils.applyAlpha(ColorUtils.interpolateColor(chanCol, 0xFFFFFFFF, 0.20f), 0.95f * effA);
+            RenderUtils.drawGradientRect(ms, x, trackY, fw, trackH, trackH / 2f, fillL, fillR, true);
         }
         float knobD = 6f;
         float knobCx = x + fw;

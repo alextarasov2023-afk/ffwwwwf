@@ -71,6 +71,7 @@ class DropdownWindow {
     private final Map<FloatSetting, AnimationUtils> sliderValues = new HashMap<>();
     private final Map<ModeSetting, float[]> modeGlide = new HashMap<>();
     private final Map<ModeSetting, float[]> modePulse = new HashMap<>(); // [time, lastIdx]
+    private final Map<Module, Long> lastToggleAt = new HashMap<>();
     private final Set<Module> expanded = new HashSet<>();
 
     private Module hoverModule;
@@ -337,6 +338,32 @@ class DropdownWindow {
         text(ms, 15, category.getName(), x + PAD + 24, hcy - fh(15) / 2f,
                 ColorUtils.rgba(242, 244, 250, (int) (250 * op)));
 
+        // Бейдж включённых модулей категории справа: точка + счётчик
+        int enabledCnt = 0;
+        for (Module m : modules()) {
+            if (m.isEnable()) enabledCnt++;
+        }
+        String cnt = String.valueOf(enabledCnt);
+        float cntW = tw(10, cnt);
+        float dotR = 2.1f;
+        float badgeW = dotR * 2f + 5f + cntW + 7f;
+        float bx = x + WIN_W - PAD - 2f - badgeW;
+        float by = hcy - 7f;
+        if (enabledCnt > 0) {
+            RenderUtils.drawRoundedRect(ms, bx, by, badgeW, 14f, 7f,
+                    ColorUtils.applyAlpha(ac, 0.16f * op));
+        } else {
+            RenderUtils.drawRoundedRect(ms, bx, by, badgeW, 14f, 7f,
+                    ColorUtils.rgba(255, 255, 255, (int) (14 * op)));
+        }
+        float dotA = enabledCnt > 0 ? 0.95f : 0.30f;
+        RenderUtils.drawRoundCircle(ms, bx + 7f, hcy, dotR,
+                ColorUtils.applyAlpha(enabledCnt > 0 ? ac : ColorUtils.rgba(160, 168, 182, 255), dotA * op));
+        text(ms, 10, cnt, bx + dotR * 2f + 8f, hcy - fh(10) / 2f,
+                enabledCnt > 0
+                        ? ColorUtils.rgba(238, 241, 249, (int) (240 * op))
+                        : ColorUtils.rgba(150, 157, 172, (int) (185 * op)));
+
         float uw = (WIN_W - PAD * 2);
         int hdrAccent = ColorUtils.applyAlpha(ClickGuiScreen.accentAt(wy + HEADER_H), (int) (110 * op));
         RenderUtils.drawRoundedRect(ms, x + PAD, wy + HEADER_H - 1f, uw, 1f, 0.5f, hdrAccent);
@@ -362,7 +389,7 @@ class DropdownWindow {
 
         if (flt <= 0.02f) return;
 
-        // Hover-отслеживание — НУЖНО для тултипов, но ВИЗУАЛЬНОЙ подсветки нет
+        // Hover-отслеживание — для тултипов и мягкой подсветки строки
         boolean listMoving = Math.abs(scrollTarget - scrollCurrent) > 0.2f;
         boolean hov = !listMoving && match && HoveringUtils.isHovered(mouseX, mouseY, x, ry, WIN_W, ROW_H);
         if (hov) {
@@ -371,10 +398,31 @@ class DropdownWindow {
         } else if (hoverModule == m) {
             hoverModule = null;
         }
+        AnimationUtils hovA = anim(m.toString() + "_hov", 14f, Easings.CUBIC_OUT);
+        hovA.update(hov ? 1f : 0f);
+        float hp = MathHelper.clamp(hovA.getValue(), 0f, 1f);
 
-        // Подсветка включённого модуля убрана — остаётся только ползунок toggle.
-        float nameX = x + PAD + 2;
-        int nameCol = ColorUtils.rgba(220, 226, 238, (int) (235 * vp));
+        // Мягкая hover-подложка: пилюля с лёгким высветлением
+        if (hp > 0.02f) {
+            RenderUtils.drawRoundedRect(ms, x + 2f, ry + 0.5f, WIN_W - 4f, ROW_H - 1f, 5f,
+                    ColorUtils.rgba(255, 255, 255, (int) (15 * hp * vp)));
+        }
+
+        // Акцентная полоса слева у включённого модуля: растёт из центра при включении
+        float enBar = Math.min(1f, enP);
+        if (enBar > 0.03f) {
+            float barH = (ROW_H - 9f) * enBar;
+            RenderUtils.drawRoundedRect(ms, x + 2.6f, ry + (ROW_H - barH) / 2f, 1.8f, barH, 0.9f,
+                    ColorUtils.applyAlpha(ac, 0.9f * enBar * vp));
+        }
+
+        // Имя: плавно светлеет при включении и при наведении, чуть съезжает вправо на hover
+        float nameX = x + PAD + 2 + 2f * hp;
+        int nameBase = ColorUtils.rgba(205, 211, 224, (int) (225 * vp));
+        int nameOn = ColorUtils.interpolateColor(nameBase,
+                ColorUtils.rgba(243, 246, 252, (int) (245 * vp)), Math.min(1f, enBar * 0.8f));
+        int nameCol = ColorUtils.interpolateColor(nameOn,
+                ColorUtils.rgba(235, 240, 248, (int) (248 * vp)), hp);
         text(ms, 13, m.getName(), nameX, ry + ROW_H / 2f - fh(13) / 2f, nameCol);
 
         float swX = x + WIN_W - PAD - 2f - ToggleSwitch.W;
@@ -406,6 +454,30 @@ class DropdownWindow {
         }
 
         ToggleSwitch.draw(ms, swX, swY, enC, vp, ac);
+
+        // Ripple при переключении: два расходящихся кольца от тумблера
+        Long tgAt = lastToggleAt.get(m);
+        if (tgAt != null) {
+            float age = (System.currentTimeMillis() - tgAt) / 460f;
+            if (age < 1f) {
+                float cxS = swX + ToggleSwitch.W / 2f;
+                float cyS = swY + ToggleSwitch.H / 2f;
+                for (int ring = 0; ring < 2; ring++) {
+                    float ra = age - ring * 0.22f;
+                    if (ra <= 0f || ra >= 1f) continue;
+                    float ease = 1f - (1f - ra) * (1f - ra);
+                    float rw = ToggleSwitch.W + (6f + 30f * ease) * 2f;
+                    float rh = ToggleSwitch.H + (6f + 30f * ease) * 2f;
+                    RenderUtils.drawRoundedRectOutline(ms, cxS - rw / 2f, cyS - rh / 2f, rw, rh, rh / 2f, 1f,
+                            ColorUtils.applyAlpha(ac, 0.5f * (1f - ra) * vp),
+                            ColorUtils.applyAlpha(ac, 0.5f * (1f - ra) * vp),
+                            ColorUtils.applyAlpha(ac, 0.35f * (1f - ra) * vp),
+                            ColorUtils.applyAlpha(ac, 0.35f * (1f - ra) * vp));
+                }
+            } else {
+                lastToggleAt.remove(m);
+            }
+        }
 
         if (exP > 0.01f && hasSettings(m)) {
             renderSettings(ms, m, ry + ROW_H, exP, mouseX, mouseY, ac, winP, dt);
@@ -576,8 +648,10 @@ class DropdownWindow {
         float frac = (shown - num.getMin()) / Math.max(0.0001f, num.getMax() - num.getMin());
         float fw = w0 * MathHelper.clamp(frac, 0f, 1f);
         if (fw > 0.5f) {
-            RenderUtils.drawRoundedRect(ms, x0, trackY, fw, trackH, trackH / 2f,
-                    ColorUtils.applyAlpha(ac, 0.92f * a * winP));
+            // Градиентная заливка: темнее у основания, светлее у ползунка
+            int fillL = ColorUtils.applyAlpha(ac, 0.60f * a * winP);
+            int fillR = ColorUtils.applyAlpha(ColorUtils.interpolateColor(ac, 0xFFFFFFFF, 0.22f), 0.95f * a * winP);
+            RenderUtils.drawGradientRect(ms, x0, trackY, fw, trackH, trackH / 2f, fillL, fillR, true);
         }
         float knobR = 3.4f + 1.0f * hp;
         float knobCx = x0 + fw;
@@ -765,6 +839,7 @@ class DropdownWindow {
                     float swY = cy + ROW_H / 2f - ToggleSwitch.H / 2f;
                     if (ToggleSwitch.hit(mx, my, swX, swY)) {
                         m.toggle();
+                        lastToggleAt.put(m, System.currentTimeMillis());
                     }
                 } else if (button == 1 && hasSettings(m)) {
                     if (!expanded.add(m)) expanded.remove(m);
