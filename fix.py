@@ -1,0 +1,1 @@
+f=open("src/main/java/fun/wonderful/client/modules/impl/combat/KillAura.java","r");c=f.read();f.close();c=c.replace("sprintResetDone = true;\n        }\n\n    private Entity findTarget","sprintResetDone = true;\n        }\n    }\n\n    private Entity findTarget");f=open("src/main/java/fun/wonderful/client/modules/impl/combat/KillAura.java","w");f.write(c);f.close()

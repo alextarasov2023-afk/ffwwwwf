@@ -1,0 +1,24 @@
+{
+  "required": true,
+  "package": "fun.wonderful.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MinecraftClientMixin",
+    "InGameGuiMixin",
+    "WorldRendererMixin",
+    "KeyboardMixin",
+    "MouseMixin",
+    "EntityLookMixin",
+    "CameraMixin",
+    "EntityRenderDispatcherMixin",
+    "ICameraAccessor",
+    "IEntity",
+    "IMinecraftClientAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}

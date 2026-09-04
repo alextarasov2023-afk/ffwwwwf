@@ -1,0 +1,25 @@
+
+> Configure project :
+Fabric Loom: 1.15.5
+Project directory 'C:\Users\1\OneDrive\Desktop\╨Э╨╛╨▓╨░╤П ╨┐╨░╨┐╨║╨░ (11)' is located in OneDrive. This is known to cause issues and slower performance. Consider moving the project to a different location.
+
+> Task :compileJava UP-TO-DATE
+> Task :processResources UP-TO-DATE
+> Task :classes UP-TO-DATE
+> Task :compileTestJava NO-SOURCE
+> Task :jar UP-TO-DATE
+> Task :processIncludeJars UP-TO-DATE
+> Task :remapJar UP-TO-DATE
+> Task :sourcesJar UP-TO-DATE
+> Task :remapSourcesJar UP-TO-DATE
+> Task :assemble UP-TO-DATE
+> Task :processTestResources NO-SOURCE
+> Task :testClasses UP-TO-DATE
+> Task :test NO-SOURCE
+> Task :validateAccessWidener UP-TO-DATE
+> Task :check UP-TO-DATE
+> Task :build UP-TO-DATE
+> Task :deployMod UP-TO-DATE
+
+BUILD SUCCESSFUL in 4s
+9 actionable tasks: 9 up-to-date
