@@ -13,6 +13,7 @@ import fun.wonderful.api.utils.render.fonts.msdf.Font;
 import fun.wonderful.api.utils.render.fonts.msdf.Fonts;
 import fun.wonderful.client.modules.Module;
 import fun.wonderful.client.modules.impl.TestModules;
+import fun.wonderful.client.ui.clickgui.ThemePanel;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
 
