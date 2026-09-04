@@ -5,6 +5,7 @@ import fun.wonderful.Wonderful;
 import fun.wonderful.api.QClient;
 import fun.wonderful.api.events.EventInvoker;
 import fun.wonderful.api.storages.implement.*;
+import fun.wonderful.api.utils.notification.NotificationRenderer;
 import fun.wonderful.api.utils.tps.TPSCalc;
 
 public class InitializeStorage implements QClient {
@@ -29,5 +30,8 @@ public class InitializeStorage implements QClient {
         Wonderful.INSTANCE.waypointStorage = new WaypointStorage();
         Wonderful.INSTANCE.commandStorage = new CommandStorage();
         Wonderful.INSTANCE.configStorage = new ConfigStorage();
+
+        // Рендер уведомлений (слушает EventRender.Default)
+        new NotificationRenderer();
     }
 }

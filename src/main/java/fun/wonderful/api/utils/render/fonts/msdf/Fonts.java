@@ -1,8 +1,11 @@
 package fun.wonderful.api.utils.render.fonts.msdf;
 
-import net.minecraft.client.util.math.MatrixStack;
 import java.util.HashMap;
 
+/**
+ * Кэш MSDF-шрифтов. Грузятся только реально используемые атласы:
+ * suisse (весь GUI/HUD) и sf_regular. Размеры 8–99 прекешированы.
+ */
 public class Fonts {
 
     private static final HashMap<String, MsdfFont> loadedFonts = new HashMap<>();
@@ -14,10 +17,6 @@ public class Fonts {
         initialized = true;
 
         loadFont("sf_regular");
-        loadFont("wave");
-        loadFont("icon");
-        loadFont("icon1");
-        loadFont("iconnew");
         loadFont("suisse");
     }
 
@@ -59,11 +58,5 @@ public class Fonts {
         }
 
         return null;
-    }
-
-    public static void drawStringWithFade(Font font, String text, float x, float y, float maxWidth, int color) {
-        if (font == null) return;
-        MatrixStack stack = new MatrixStack();
-        font.drawStringWithFade(stack, text, x, y, maxWidth, color);
     }
 }
