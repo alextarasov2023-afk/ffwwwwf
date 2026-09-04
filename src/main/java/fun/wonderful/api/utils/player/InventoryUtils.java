@@ -19,7 +19,6 @@ import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.util.Hand;
 import net.minecraft.util.PlayerInput;
 
-import fun.wonderful.Wonderful;
 import fun.wonderful.api.QClient;
 
 @UtilityClass

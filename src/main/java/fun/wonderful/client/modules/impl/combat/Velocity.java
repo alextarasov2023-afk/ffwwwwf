@@ -1,6 +1,5 @@
 package fun.wonderful.client.modules.impl.combat;
 
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import fun.wonderful.api.events.EventLink;
 import fun.wonderful.api.events.implement.EventUpdate;
 import fun.wonderful.api.events.implement.EventPacket;

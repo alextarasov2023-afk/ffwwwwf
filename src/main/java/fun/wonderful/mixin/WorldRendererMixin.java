@@ -3,7 +3,6 @@ package fun.wonderful.mixin;
 import fun.wonderful.Wonderful;
 import fun.wonderful.api.events.EventInvoker;
 import fun.wonderful.api.events.implement.Event3DRender;
-import fun.wonderful.api.events.implement.EventRender;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.RenderTickCounter;

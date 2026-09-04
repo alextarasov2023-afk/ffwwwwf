@@ -2,7 +2,6 @@ package fun.wonderful.api.utils.input;
 
 import lombok.experimental.UtilityClass;
 import org.lwjgl.glfw.GLFW;
-import fun.wonderful.Wonderful;
 import fun.wonderful.api.QClient;
 import fun.wonderful.api.events.implement.EventBinding;
 import fun.wonderful.api.storages.implement.helpertstorages.enumvar.ModuleClass;

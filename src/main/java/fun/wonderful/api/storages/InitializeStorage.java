@@ -5,7 +5,6 @@ import fun.wonderful.Wonderful;
 import fun.wonderful.api.QClient;
 import fun.wonderful.api.events.EventInvoker;
 import fun.wonderful.api.storages.implement.*;
-import fun.wonderful.api.storages.implement.helpertstorages.enumvar.ModuleClass;
 import fun.wonderful.api.utils.tps.TPSCalc;
 
 public class InitializeStorage implements QClient {
@@ -24,7 +23,6 @@ public class InitializeStorage implements QClient {
         Wonderful.INSTANCE.localizationStorage = new LocalizationStorage();
         Wonderful.INSTANCE.freeLookStorage = new FreeLookStorage();
         Wonderful.INSTANCE.rotationStorage = new RotationStorage();
-        // Wonderful.INSTANCE.serverStorage = new ServerStorage();
         Wonderful.INSTANCE.friendStorage = new FriendStorage();
         Wonderful.INSTANCE.macroStorage = new MacroStorage();
         Wonderful.INSTANCE.staffStorage = new StaffStorage();

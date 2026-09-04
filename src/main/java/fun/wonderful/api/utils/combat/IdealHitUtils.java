@@ -12,7 +12,6 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
-import fun.wonderful.Wonderful;
 import fun.wonderful.api.QClient;
 import fun.wonderful.mixin.IEntity;
 

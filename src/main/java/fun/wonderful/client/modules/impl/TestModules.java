@@ -48,7 +48,6 @@ import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
-import java.util.Random;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -61,7 +60,6 @@ public final class TestModules {
         private LivingEntity aimTarget;
         private Vec3d aimPoint;
         private int aimPointTicks;
-        private final Random rand = new Random();
 
         public AimAssist() {
             super("AimAssist", "Легитная плавная наводка: мягко доводит прицел до цели", ModuleCategory.COMBAT);

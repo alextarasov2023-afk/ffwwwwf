@@ -1,7 +1,5 @@
 package fun.wonderful.client.modules.impl.render;
 
-import fun.wonderful.api.events.EventLink;
-import fun.wonderful.api.events.implement.EventUpdate;
 import fun.wonderful.api.storages.implement.FreeLookStorage;
 import fun.wonderful.client.modules.Module;
 

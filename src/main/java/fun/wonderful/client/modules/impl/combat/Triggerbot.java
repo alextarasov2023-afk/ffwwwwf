@@ -21,8 +21,6 @@ import fun.wonderful.client.modules.settings.implement.FloatSetting;
 import fun.wonderful.client.modules.settings.implement.ModeSetting;
 import fun.wonderful.api.storages.implement.RotationStorage;
 
-import java.util.Random;
-
 public class Triggerbot extends Module {
 
     public static Triggerbot INSTANCE = new Triggerbot();
@@ -39,14 +37,11 @@ public class Triggerbot extends Module {
 
     private int lastAttackTick = -100;
     private int currentTick = 0;
-    private int groundTicks = 0;
-    private int airTicks = 0;
     private int landedTicks = 0;
 
     private Entity lastTarget;
     public Entity getLastTarget() { return lastTarget; }
 
-    private final Random random = new Random();
 
     public Triggerbot() {
         super("Triggerbot", "Автоматически атакует цель при наведении", ModuleCategory.COMBAT);
@@ -57,8 +52,6 @@ public class Triggerbot extends Module {
     public void onDisable() {
         needSprintReset = false;
         sprintResetDone = false;
-        groundTicks = 0;
-        airTicks = 0;
         landedTicks = 0;
         lastTarget = null;
         RotationStorage.instance.stopRotation();
@@ -73,12 +66,7 @@ public class Triggerbot extends Module {
         currentTick++;
 
         if (mc.player.isOnGround()) {
-            groundTicks++;
-            airTicks = 0;
             landedTicks++;
-        } else {
-            airTicks++;
-            groundTicks = 0;
         }
 
         if (currentTick - lastAttackTick < 5) return;
@@ -219,7 +207,6 @@ public class Triggerbot extends Module {
         lastAttackTick = currentTick;
         lastTarget = target;
         landedTicks = 0;
-        groundTicks = 0;
         sprintResetDone = false;
         needSprintReset = false;
     }

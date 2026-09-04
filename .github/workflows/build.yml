@@ -120,11 +120,12 @@ jobs:
           path: build/libs/*.jar
           if-no-files-found: error
 
-      - name: Commit gradle wrapper (для локальных сборок)
+      - name: Publish build to Release (постоянная ссылка на jar)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          gradle wrapper --gradle-version 9.2.0 --no-daemon
-          git config user.name "arena-ai-coding-agent[bot]"
-          git config user.email "arena-ai-coding-agent[bot]@users.noreply.github.com"
-          git add gradlew gradlew.bat gradle/wrapper
-          git diff --cached --quiet || git commit -m "chore: добавить gradle wrapper 8.14 [skip ci]"
-          git push
+          gh release delete build -y --cleanup-tag || true
+          gh release create build build/libs/*.jar \
+            --title "wonderful — свежая сборка" \
+            --notes "Автосборка ветки arena/01a06e22-ffwwwwf. MC 1.21.4, Fabric." \
+            --prerelease || true

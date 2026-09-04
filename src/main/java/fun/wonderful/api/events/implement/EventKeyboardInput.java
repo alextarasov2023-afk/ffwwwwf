@@ -4,7 +4,6 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
 import net.minecraft.util.math.MathHelper;
-import fun.wonderful.api.QClient;
 import fun.wonderful.api.events.Event;
 
 @AllArgsConstructor @Getter @Setter

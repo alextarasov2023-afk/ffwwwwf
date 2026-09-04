@@ -1,10 +1,6 @@
 package fun.wonderful.api.utils.rpc;
 
 import lombok.Getter;
-import net.minecraft.client.gui.screen.TitleScreen;
-import net.minecraft.client.gui.screen.multiplayer.MultiplayerScreen;
-import net.minecraft.client.gui.screen.world.SelectWorldScreen;
-import net.minecraft.client.network.ServerInfo;
 import fun.wonderful.api.QClient;
 import fun.wonderful.api.utils.rpc.utils.DiscordEventHandlers;
 import fun.wonderful.api.utils.rpc.utils.DiscordRPC;

@@ -2,8 +2,6 @@ package fun.wonderful.client.ui.clickgui;
 
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.RotationAxis;
-import com.mojang.blaze3d.systems.RenderSystem;
 
 import fun.wonderful.api.storages.implement.helpertstorages.enumvar.ModuleClass;
 import fun.wonderful.api.utils.animation.AnimationUtils;
@@ -241,10 +239,6 @@ class DropdownWindow {
             return hoverModule;
         }
         return null;
-    }
-
-    void collapseExpanded() {
-        expanded.clear();
     }
 
     void render(MatrixStack ms, ClickGuiScreen gui, int mouseX, int mouseY, float dt) {

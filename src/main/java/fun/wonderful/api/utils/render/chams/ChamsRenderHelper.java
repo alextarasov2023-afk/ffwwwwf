@@ -4,11 +4,6 @@ import fun.wonderful.api.QClient;
 import fun.wonderful.client.modules.impl.TestModules;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.decoration.ArmorStandEntity;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.entity.passive.AnimalEntity;
-import net.minecraft.entity.player.PlayerEntity;
 
 /**
  * Помощник Chams-модуля: решает, является ли сущность целью (по настройкам
