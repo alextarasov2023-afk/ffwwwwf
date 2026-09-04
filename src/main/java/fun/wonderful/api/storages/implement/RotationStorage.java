@@ -11,6 +11,7 @@ import fun.wonderful.api.events.implement.EventKeyboardInput;
 import fun.wonderful.api.events.implement.EventUpdate;
 import fun.wonderful.api.utils.rotate.GCDUtil;
 import fun.wonderful.api.utils.rotate.Rotation;
+import fun.wonderful.client.modules.impl.render.FreeLook;
 
 @Getter
 @Setter
@@ -165,7 +166,10 @@ public class RotationStorage implements QClient {
     public void stopRotation() {
         currentTask(RotationTask.IDLE);
         currentPriority(0);
-        FreeLookStorage.setActive(false);
+        // FreeLook, включённый отдельным модулем, ротация трогать не должна
+        if (!FreeLook.INSTANCE.isEnable()) {
+            FreeLookStorage.setActive(false);
+        }
     }
 
     public boolean isRotating() {

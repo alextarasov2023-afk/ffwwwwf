@@ -4,23 +4,22 @@ import lombok.Getter;
 import lombok.Setter;
 import fun.wonderful.api.QClient;
 import fun.wonderful.api.storages.implement.helpertstorages.enumvar.ModuleClass;
+import fun.wonderful.client.modules.impl.TestModules;
 import fun.wonderful.client.modules.impl.combat.AntiBot;
+import fun.wonderful.client.modules.impl.combat.KillAura;
 import fun.wonderful.client.modules.impl.combat.PacketCriticals;
 import fun.wonderful.client.modules.impl.combat.TpsSync;
-import fun.wonderful.client.modules.impl.combat.Velocity;
 import fun.wonderful.client.modules.impl.combat.Triggerbot;
-import fun.wonderful.client.modules.impl.combat.KillAura;
-import fun.wonderful.client.modules.impl.movement.Sprint;
-import fun.wonderful.client.modules.impl.movement.Sprint;
-import fun.wonderful.client.modules.impl.movement.NoSlow;
-import fun.wonderful.client.modules.impl.movement.GrimNoFall;
+import fun.wonderful.client.modules.impl.combat.Velocity;
 import fun.wonderful.client.modules.impl.misc.NoDelay;
+import fun.wonderful.client.modules.impl.movement.GrimNoFall;
+import fun.wonderful.client.modules.impl.movement.NoSlow;
+import fun.wonderful.client.modules.impl.movement.Sprint;
 import fun.wonderful.client.modules.impl.player.AutoEat;
 import fun.wonderful.client.modules.impl.player.FastPlace;
-import fun.wonderful.client.modules.impl.render.Nametags;
 import fun.wonderful.client.modules.impl.render.FreeLook;
+import fun.wonderful.client.modules.impl.render.Nametags;
 import fun.wonderful.client.modules.impl.render.SwingAnimations;
-import fun.wonderful.client.modules.impl.TestModules;
 
 @Getter
 @Setter
@@ -32,32 +31,43 @@ public class ModuleStorage implements QClient {
     }
 
     private void initModules() {
-        var list = ModuleClass.INSTANCE.getObject();        list.add(Triggerbot.INSTANCE);
+        var list = ModuleClass.INSTANCE.getObject();
+
+        // ===== Combat =====
         list.add(KillAura.INSTANCE);
+        list.add(Triggerbot.INSTANCE);
         list.add(AntiBot.INSTANCE);
+        list.add(Velocity.INSTANCE);
         list.add(TpsSync.INSTANCE);
         list.add(PacketCriticals.INSTANCE);
-
         list.add(new TestModules.AimAssist());
-        list.add(Velocity.INSTANCE);
-        list.add(new TestModules.Speed());
+
+        // ===== Movement =====
         list.add(Sprint.INSTANCE);
-        list.add(new TestModules.Flight());
+        list.add(NoSlow.INSTANCE);
         list.add(GrimNoFall.INSTANCE);
+        list.add(new TestModules.Speed());
+        list.add(new TestModules.Flight());
+
+        // ===== Player =====
+        list.add(AutoEat.INSTANCE);
+        list.add(FastPlace.INSTANCE);
         list.add(new TestModules.ChestStealer());
+
+        // ===== Misc =====
+        list.add(NoDelay.INSTANCE);
         list.add(new TestModules.AutoClicker());
         list.add(new TestModules.AntiStaff());
         list.add(new TestModules.NameProtect());
-        list.add(NoSlow.INSTANCE);
-        list.add(NoDelay.INSTANCE);
-        list.add(AutoEat.INSTANCE);
-        list.add(FastPlace.INSTANCE);
 
+        // ===== Render =====
         list.add(Nametags.INSTANCE);
         list.add(FreeLook.INSTANCE);
         list.add(SwingAnimations.INSTANCE);
+        list.add(new TestModules.Chams());
         list.add(new TestModules.TargetEsp());
         list.add(new TestModules.Watermark());
+        list.add(new TestModules.TargetHud());
 
         ModuleClass.INSTANCE.initialize();
     }

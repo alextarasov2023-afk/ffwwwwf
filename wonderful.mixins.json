@@ -4,16 +4,24 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "MinecraftClientMixin",
+    "ClientPlayerEntityMixin",
+    "ClientPlayerInteractionManagerMixin",
+    "ClientConnectionMixin",
+    "KeyboardInputMixin",
     "InGameGuiMixin",
-    "WorldRendererMixin",
     "KeyboardMixin",
     "MouseMixin",
     "EntityLookMixin",
     "CameraMixin",
     "EntityRenderDispatcherMixin",
+    "WorldRendererMixin",
+    "ChatScreenMixin",
     "ICameraAccessor",
     "IEntity",
-    "IMinecraftClientAccessor"
+    "IMinecraftClientAccessor",
+    "ILivingEntityAccessor",
+    "HeldItemRendererMixin",
+    "HeldItemRendererInvoker"
   ],
   "injectors": {
     "defaultRequire": 1

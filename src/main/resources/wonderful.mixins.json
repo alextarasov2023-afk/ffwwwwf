@@ -6,6 +6,7 @@
     "MinecraftClientMixin",
     "ClientPlayerEntityMixin",
     "ClientPlayerInteractionManagerMixin",
+    "ClientConnectionMixin",
     "KeyboardInputMixin",
     "InGameGuiMixin",
     "KeyboardMixin",

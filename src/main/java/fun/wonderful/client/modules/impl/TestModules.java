@@ -1,13 +1,16 @@
 package fun.wonderful.client.modules.impl;
 
+import fun.wonderful.Wonderful;
 import fun.wonderful.api.events.EventLink;
+import fun.wonderful.api.events.implement.EventPacket;
 import fun.wonderful.api.events.implement.EventUpdate;
-import fun.wonderful.api.storages.implement.FreeLookStorage;
 import fun.wonderful.api.storages.implement.RotationStorage;
 import fun.wonderful.api.storages.implement.WatermarkStorage;
-import fun.wonderful.api.utils.combat.IdealHitUtils;
-import fun.wonderful.api.utils.rotate.GCDUtil;
-import fun.wonderful.api.utils.rotate.Rotation;
+import fun.wonderful.api.utils.chat.ChatUtils;
+import fun.wonderful.api.utils.client.ClientSoundPlayer;
+import fun.wonderful.api.utils.math.MathUtils;
+import fun.wonderful.api.utils.notification.NotificationManager;
+import fun.wonderful.api.utils.player.MoveUtils;
 import fun.wonderful.api.utils.rotate.RotationUtils;
 import fun.wonderful.client.modules.Module;
 import fun.wonderful.client.modules.settings.implement.BindSetting;
@@ -16,6 +19,8 @@ import fun.wonderful.client.modules.settings.implement.FloatSetting;
 import fun.wonderful.client.modules.settings.implement.ListSetting;
 import fun.wonderful.client.modules.settings.implement.ModeSetting;
 import fun.wonderful.client.modules.settings.implement.TextSetting;
+import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
+import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
@@ -23,15 +28,29 @@ import net.minecraft.entity.decoration.ArmorStandEntity;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ShieldItem;
+import net.minecraft.item.ArmorItem;
+import net.minecraft.item.AxeItem;
+import net.minecraft.item.HoeItem;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.MaceItem;
+import net.minecraft.item.PickaxeItem;
+import net.minecraft.item.ShovelItem;
+import net.minecraft.item.SwordItem;
+import net.minecraft.network.packet.s2c.play.GameMessageS2CPacket;
+import net.minecraft.screen.ScreenHandler;
+import net.minecraft.screen.slot.Slot;
+import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.text.MutableText;
+import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec2f;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.Random;
+import java.util.HashSet;
+import java.util.Set;
 
 public final class TestModules {
 
@@ -179,119 +198,425 @@ public final class TestModules {
         }
     }
 
-    public static class Velocity extends Module {
-        public Velocity() {
-            super("Velocity", "Тест отброса урона с настройками процентов", ModuleCategory.COMBAT);
-            addSettings(
-                    new ModeSetting("Mode", "Grim", "Grim", "Vulcan", "Spartan", "Cancel"),
-                    new FloatSetting("Horizontal", 85f, 0f, 100f, 5f),
-                    new FloatSetting("Vertical", 100f, 0f, 100f, 5f),
-                    new BooleanSetting("OnlyWhileMove", true)
-            );
-        }
-    }
-
+    /**
+     * Speed — ускорение передвижения.
+     * Vanilla: постоянная скорость каждый тик.
+     * Strafe: на земле держим скорость, в воздухе не теряем (фрикшен-компенсация).
+     * Bhop: прыжок + стрейф (классический bhop).
+     */
     public static class Speed extends Module {
+
+        private final ModeSetting type = new ModeSetting("Тип", "Strafe", "Vanilla", "Strafe", "Bhop");
+        private final FloatSetting speed = new FloatSetting("Скорость", 1.6f, 1f, 3f, 0.05f);
+        private final BooleanSetting boost = new BooleanSetting("Буст спринта", false);
+
         public Speed() {
-            super("Speed", "Тест ускорения передвижения", ModuleCategory.MOVEMENT);
-            addSettings(
-                    new ModeSetting("Type", "Strafe", "Vanilla", "Strafe", "Bhop"),
-                    new FloatSetting("Speed", 1.6f, 1f, 3f, 0.05f),
-                    new BooleanSetting("Boost", false),
-                    new BindSetting("KeyBind", -1)
-            );
-        }
-    }
-
-    public static class Flight extends Module {
-        public Flight() {
-            super("Flight", "Тест полёта с анти-чит ветками", ModuleCategory.MOVEMENT);
-            addSettings(
-                    new ModeSetting("AntiCheat", "Vanilla", "Vanilla", "Grim"),
-                    new FloatSetting("Speed", 1.2f, 0.5f, 5f, 0.1f),
-                    new BooleanSetting("DamageFly", false)
-            );
-        }
-    }
-
-    public static class Sprint extends Module {
-        // KillAura гасит спринт на время прыжка-удара (сброс спринта);
-        // пока лок активен, Sprint не форсирует спринт обратно
-        public static boolean clientLock;
-
-        public Sprint() {
-            super("Sprint", "Авто-спринт: включается сам (после смерти/включения), шаг недоступен", ModuleCategory.MOVEMENT);
+            super("Speed", "Ускорение передвижения: Vanilla / Strafe / Bhop", ModuleCategory.MOVEMENT);
+            addSettings(type, speed, boost);
         }
 
         @EventLink
         public void onUpdate(EventUpdate event) {
-            if (mc.player == null || !isEnable()) return;
-            if (clientLock) return;                  // спринтом управляет KillAura (сброс на прыжке)
-            if (mc.player.isSprinting()) return;     // уже бежим
-            if (mc.player.isUsingItem()) return;     // еда/щит в руках — ванилла всё равно собьёт
-            if (!mc.options.forwardKey.isPressed()) return;
-            // Игрок не может перейти на шаг: спринт принудительно включается
-            // каждый тик; выключить можно только сам модуль
-            mc.player.setSprinting(true);
+            if (!isEnable() || mc.player == null) return;
+            if (!MoveUtils.isMoving()) return;
+
+            double base = speed.get();
+            if (boost.isState() && mc.player.isSprinting()) {
+                base *= 1.15;
+            }
+
+            switch (type.getCurrent()) {
+                case "Vanilla" -> MoveUtils.setMotion(base);
+                case "Bhop" -> {
+                    if (mc.player.isOnGround()) {
+                        // Ванильный прыжок без разгона спринта — чистая вертикаль 0.42
+                        mc.player.setVelocity(mc.player.getVelocity().x, 0.42, mc.player.getVelocity().z);
+                    }
+                    MoveUtils.strafe(base);
+                }
+                default -> {
+                    // Strafe: в воздухе не разгоняемся, а сохраняем набранную
+                    if (mc.player.isOnGround()) {
+                        MoveUtils.strafe(base);
+                    } else {
+                        MoveUtils.strafe(Math.min(MoveUtils.getSpeed() * 1.005, base));
+                    }
+                }
+            }
         }
     }
 
-    public static class NoFall extends Module {
-        public NoFall() {
-            super("NoFall", "Тест отмены урона от падения", ModuleCategory.PLAYER);
-            addSettings(
-                    new ModeSetting("Mode", "Packet", "Packet", "Ground"),
-                    new FloatSetting("Distance", 3f, 1f, 10f, 0.5f),
-                    new BooleanSetting("Cancel", true)
-            );
+    /**
+     * Flight — полёт.
+     * Vanilla: прямое управление скоростью (быстро, но палится на большинстве серверов).
+     * Grim: плавный разгон с лимитами скорости + анти-кик «провалом» раз в 4 секунды.
+     * DamageFly: полученный урон подбрасывает и поддерживает высоту.
+     */
+    public static class Flight extends Module {
+
+        private final ModeSetting antiCheat = new ModeSetting("Античит", "Vanilla", "Vanilla", "Grim");
+        private final FloatSetting speed = new FloatSetting("Скорость", 1.2f, 0.1f, 5.0f, 0.05f);
+        private final BooleanSetting damageFly = new BooleanSetting("ДамаджФлай", false);
+
+        private int antiKickTicks;
+
+        public Flight() {
+            super("Flight", "Полёт: Vanilla — прямой, Grim — плавный с анти-киком", ModuleCategory.MOVEMENT);
+            addSettings(antiCheat, speed, damageFly);
+        }
+
+        @Override
+        public void onDisable() {
+            antiKickTicks = 0;
+            if (mc.player != null) {
+                mc.player.setVelocity(Vec3d.ZERO);
+            }
+            super.onDisable();
+        }
+
+        @EventLink
+        public void onUpdate(EventUpdate event) {
+            if (mc.player == null) return;
+
+            double spd = speed.get();
+            float yaw = (float) Math.toRadians(mc.player.getYaw());
+
+            double forward = 0;
+            double strafe = 0;
+            if (mc.options.forwardKey.isPressed()) forward++;
+            if (mc.options.backKey.isPressed()) forward--;
+            if (mc.options.leftKey.isPressed()) strafe++;
+            if (mc.options.rightKey.isPressed()) strafe--;
+
+            double motionX = 0;
+            double motionY = 0;
+            double motionZ = 0;
+
+            if (forward != 0 || strafe != 0) {
+                double angle = Math.atan2(forward, strafe) - Math.PI / 2;
+                motionX = -Math.sin(yaw + angle) * spd;
+                motionZ = Math.cos(yaw + angle) * spd;
+            }
+
+            boolean verticalInput = false;
+            if (mc.options.jumpKey.isPressed()) {
+                motionY = spd;
+                verticalInput = true;
+            } else if (mc.options.sneakKey.isPressed()) {
+                motionY = -spd;
+                verticalInput = true;
+            }
+
+            // ДамаджФлай: во время урона урон «толкает» вверх и держит высоту
+            if (damageFly.isState() && mc.player.hurtTime > 0 && motionY <= 0) {
+                motionY = Math.min(spd, 0.42);
+                verticalInput = true;
+            }
+
+            if (antiCheat.is("Grim")) {
+                // Плавный разгон/торможение + лимиты, чтобы скорость была «человеческой»
+                motionX = MathHelper.clamp(motionX, -0.45, 0.45);
+                motionZ = MathHelper.clamp(motionZ, -0.45, 0.45);
+                motionY = MathHelper.clamp(motionY, -0.35, 0.35);
+
+                Vec3d cur = mc.player.getVelocity();
+                motionX = cur.x + (motionX - cur.x) * 0.25;
+                motionY = cur.y + (motionY - cur.y) * 0.25;
+                motionZ = cur.z + (motionZ - cur.z) * 0.25;
+
+                // Ховер: без вертикального ввода зависаем, раз в 4 сек слегка «проваливаемся»
+                if (!verticalInput) {
+                    antiKickTicks++;
+                    if (antiKickTicks >= 80) {
+                        motionY = -0.032;
+                        antiKickTicks = 0;
+                    } else {
+                        motionY = 0;
+                    }
+                } else {
+                    antiKickTicks = 0;
+                }
+            }
+
+            mc.player.setVelocity(new Vec3d(motionX, motionY, motionZ));
+            mc.player.fallDistance = 0f;
         }
     }
 
+    /**
+     * ChestStealer — автоматический вынос сундуков, шалкеров и диспенсеров.
+     * Работает через QUICK_MOVE (shift-клик) с задержкой между слотами.
+     */
     public static class ChestStealer extends Module {
+
+        private final FloatSetting delay = new FloatSetting("Задержка", 120f, 0f, 500f, 10f);
+        private final BooleanSetting ignoreFood = new BooleanSetting("Игнорировать еду", false);
+        private final BooleanSetting ignoreTrash = new BooleanSetting("Игнорировать мусор", false);
+        private final BooleanSetting autoClose = new BooleanSetting("Закрывать", true);
+
+        private long lastClickAt;
+
         public ChestStealer() {
-            super("ChestStealer", "Тест авто-лутания сундука с задержкой", ModuleCategory.PLAYER);
-            addSettings(
-                    new FloatSetting("Delay", 120f, 0f, 500f, 10f),
-                    new BooleanSetting("IgnoreFood", true),
-                    new BooleanSetting("IgnoreTrash", false)
-            );
+            super("ChestStealer", "Автоматически выносит содержимое сундуков и шалкеров", ModuleCategory.PLAYER);
+            addSettings(delay, ignoreFood, ignoreTrash, autoClose);
+        }
+
+        @Override
+        public void onDisable() {
+            lastClickAt = 0L;
+        }
+
+        @EventLink
+        public void onUpdate(EventUpdate event) {
+            if (!isEnable() || mc.player == null || mc.interactionManager == null) return;
+            if (!(mc.currentScreen instanceof GenericContainerScreen)) return;
+
+            ScreenHandler handler = mc.player.currentScreenHandler;
+            if (handler == null) return;
+
+            long now = System.currentTimeMillis();
+            if (now - lastClickAt < (long) delay.get()) return;
+
+            // Слоты контейнера = все слоты минус 36 слотов инвентаря игрока (27 + 9 хотбар)
+            int containerSlots = handler.slots.size() - 36;
+            boolean nothingToSteal = true;
+
+            for (int i = 0; i < containerSlots; i++) {
+                Slot slot = handler.slots.get(i);
+                if (!slot.hasStack()) continue;
+                ItemStack stack = slot.getStack();
+
+                if (ignoreFood.isState() && isFood(stack)) continue;
+                if (ignoreTrash.isState() && isTrash(stack)) continue;
+
+                nothingToSteal = false;
+                mc.interactionManager.clickSlot(handler.syncId, i, 0, SlotActionType.QUICK_MOVE, mc.player);
+                lastClickAt = now;
+                return; // один слот за интервал — как человек
+            }
+
+            if (autoClose.isState() && nothingToSteal) {
+                mc.setScreen(null);
+                lastClickAt = now;
+            }
+        }
+
+        private boolean isFood(ItemStack stack) {
+            return stack.getItem().getComponents().contains(DataComponentTypes.FOOD)
+                    || stack.getItem().getComponents().contains(DataComponentTypes.CONSUMABLE);
+        }
+
+        /** Мусор — всё, что не оружие / инструмент / броня. */
+        private boolean isTrash(ItemStack stack) {
+            return !(stack.getItem() instanceof SwordItem
+                    || stack.getItem() instanceof AxeItem
+                    || stack.getItem() instanceof PickaxeItem
+                    || stack.getItem() instanceof ShovelItem
+                    || stack.getItem() instanceof HoeItem
+                    || stack.getItem() instanceof ArmorItem
+                    || stack.getItem() instanceof MaceItem);
         }
     }
 
+    /**
+     * AutoClicker — кликер при зажатой ЛКМ с человеческим джиттером интервала.
+     */
     public static class AutoClicker extends Module {
+
+        private final FloatSetting cps = new FloatSetting("CPS", 12f, 1f, 20f, 0.5f);
+        private final BooleanSetting jitter = new BooleanSetting("Джиттер", true);
+        private final BooleanSetting onlyWeapon = new BooleanSetting("Только оружие", true);
+
+        private long nextClickAt;
+
         public AutoClicker() {
-            super("AutoClicker", "Тест кликера с джиттером", ModuleCategory.MISC);
-            addSettings(
-                    new FloatSetting("CPS", 12f, 1f, 20f, 0.5f),
-                    new BooleanSetting("Jitter", true),
-                    new BooleanSetting("OnlyWeapon", true),
-                    new TextSetting("Message", "")
-            );
+            super("AutoClicker", "Кликер с джиттером при зажатой ЛКМ", ModuleCategory.MISC);
+            addSettings(cps, jitter, onlyWeapon);
+        }
+
+        @Override
+        public void onDisable() {
+            nextClickAt = 0L;
+        }
+
+        @EventLink
+        public void onUpdate(EventUpdate event) {
+            if (!isEnable() || mc.player == null || mc.currentScreen != null) return;
+            if (!mc.options.attackKey.isPressed() || mc.player.isUsingItem()) return;
+            if (onlyWeapon.isState() && !isWeapon(mc.player.getMainHandStack())) return;
+
+            long now = System.currentTimeMillis();
+            if (now < nextClickAt) return;
+
+            click();
+
+            double interval = 1000.0 / Math.max(1f, cps.get());
+            if (jitter.isState()) {
+                interval += MathUtils.randomBest(-interval * 0.15, interval * 0.15);
+            }
+            nextClickAt = now + Math.max(15L, (long) interval);
+        }
+
+        private void click() {
+            if (mc.interactionManager == null) return;
+            if (mc.crosshairTarget instanceof EntityHitResult hit) {
+                mc.interactionManager.attackEntity(mc.player, hit.getEntity());
+            }
+            mc.player.swingHand(Hand.MAIN_HAND);
+        }
+
+        private boolean isWeapon(ItemStack stack) {
+            return stack.getItem() instanceof SwordItem
+                    || stack.getItem() instanceof AxeItem
+                    || stack.getItem() instanceof MaceItem;
         }
     }
 
+    /**
+     * AntiStaff — оповещение о персонале (список .staff):
+     * чат + уведомление + звук при входе стаффа, проверка уже онлайн при подключении.
+     */
     public static class AntiStaff extends Module {
+
+        private final BooleanSetting notify = new BooleanSetting("Уведомление", true);
+        private final BooleanSetting sound = new BooleanSetting("Звук", true);
+        private final BooleanSetting onWorldJoin = new BooleanSetting("При подключении", true);
+
+        private final Set<String> knownPlayers = new HashSet<>();
+        private int refreshTicks;
+
         public AntiStaff() {
-            super("AntiStaff", "Тест детекта персонала на анархии", ModuleCategory.MISC);
-            addSettings(
-                    new ListSetting("Checks",
-                            new BooleanSetting("Vulcan", true),
-                            new BooleanSetting("Grim", true),
-                            new BooleanSetting("Intave", false)),
-                    new BooleanSetting("Notify", true),
-                    new TextSetting("Sound", "random.orb")
-            );
+            super("AntiStaff", "Оповещает о входе персонала (список .staff)", ModuleCategory.MISC);
+            addSettings(notify, sound, onWorldJoin);
+        }
+
+        @Override
+        public void onDisable() {
+            knownPlayers.clear();
+            refreshTicks = 0;
+        }
+
+        @EventLink
+        public void onUpdate(EventUpdate event) {
+            if (!isEnable() || mc.player == null || mc.getNetworkHandler() == null) {
+                knownPlayers.clear();
+                return;
+            }
+
+            // Список игроков обновляем раз в 10 тиков (~2 раза в секунду)
+            if (++refreshTicks % 10 != 0) return;
+
+            Set<String> current = new HashSet<>();
+            for (PlayerListEntry entry : mc.getNetworkHandler().getPlayerList()) {
+                current.add(entry.getProfile().getName());
+            }
+
+            if (knownPlayers.isEmpty()) {
+                // Первый скан (вход в мир / включение модуля): стафф уже онлайн?
+                if (onWorldJoin.isState() && !current.isEmpty()) {
+                    for (String name : current) {
+                        if (isStaff(name)) {
+                            alert(name);
+                        }
+                    }
+                }
+            } else {
+                for (String name : current) {
+                    if (!knownPlayers.contains(name) && isStaff(name)) {
+                        alert(name);
+                    }
+                }
+            }
+
+            knownPlayers.clear();
+            knownPlayers.addAll(current);
+        }
+
+        private boolean isStaff(String name) {
+            if (Wonderful.INSTANCE == null || Wonderful.INSTANCE.staffStorage == null) return false;
+            for (String staff : Wonderful.INSTANCE.staffStorage.getStaffs()) {
+                if (staff.equalsIgnoreCase(name)) return true;
+            }
+            return false;
+        }
+
+        private void alert(String name) {
+            if (notify.isState()) {
+                ChatUtils.sendMessage("⚠ Персонал в сети: " + name);
+                NotificationManager.pushCustom("Персонал: " + name, "staff");
+            }
+            if (sound.isState()) {
+                ClientSoundPlayer.playSound("Второй.wav", 0.8, 1.0f);
+            }
         }
     }
 
+    /**
+     * NameProtect — скрывает ваш ник во входящих сообщениях чата.
+     * Сообщение с ником отменяется и добавляется замаскированная копия
+     * (структура и цвета оригинала сохраняются). «Стример» — маскирует ник
+     * в любом регистре.
+     */
     public static class NameProtect extends Module {
+
+        private final TextSetting nick = new TextSetting("Замена", "Вы");
+        private final BooleanSetting streamer = new BooleanSetting("Стример", false);
+        private final BooleanSetting skin = new BooleanSetting("Скин", false);
+
         public NameProtect() {
-            super("NameProtect", "Тест скрытия ника в чате и табе", ModuleCategory.MISC);
-            addSettings(
-                    new TextSetting("Nick", "Player"),
-                    new BooleanSetting("Streamer", false),
-                    new BooleanSetting("Skin", true)
-            );
+            super("NameProtect", "Скрывает ваш ник в чате (стрим-режим)", ModuleCategory.MISC);
+            addSettings(nick, streamer, skin);
+        }
+
+        @EventLink
+        public void onPacket(EventPacket event) {
+            if (!isEnable() || mc.player == null) return;
+            if (event.getType() != EventPacket.Type.RECEIVE) return;
+            if (!(event.getPacket() instanceof GameMessageS2CPacket message)) return;
+
+            String myNick = mc.player.getName().getString();
+            Text content = message.getContent();
+            if (!content.getString().contains(myNick)) return;
+
+            // Отменяем ванильный показ и добавляем замаскированную копию.
+            // Пакеты приходят на Netty-потоке — добавление в чат уводим на основной
+            event.setCancelled(true);
+            String replacement = nick.get().isEmpty() ? "Вы" : nick.get();
+            MutableText masked = mask(content, myNick, replacement, streamer.isState());
+            mc.execute(() -> mc.inGameHud.getChatHud().addMessage(masked));
+        }
+
+        /** Рекурсивная маска: узел -> замаскированная своя строка + дети (стили сохраняются). */
+        private MutableText mask(Text node, String nickToHide, String replacement, boolean anyCase) {
+            MutableText out = Text.literal(replace(ownString(node), nickToHide, replacement, anyCase))
+                    .setStyle(node.getStyle());
+            for (Text child : node.getSiblings()) {
+                out.append(mask(child, nickToHide, replacement, anyCase));
+            }
+            return out;
+        }
+
+        /** Собственная строка узла = полная строка минус конкатенация дочерних строк. */
+        private String ownString(Text node) {
+            String full = node.getString();
+            StringBuilder siblings = new StringBuilder();
+            for (Text child : node.getSiblings()) {
+                siblings.append(child.getString());
+            }
+            String suffix = siblings.toString();
+            if (!suffix.isEmpty() && full.endsWith(suffix)) {
+                return full.substring(0, full.length() - suffix.length());
+            }
+            return suffix.isEmpty() ? full : "";
+        }
+
+        private String replace(String source, String nickToHide, String replacement, boolean anyCase) {
+            if (source.isEmpty()) return source;
+            if (anyCase) {
+                return source.replaceAll("(?i)" + java.util.regex.Pattern.quote(nickToHide),
+                        java.util.regex.Matcher.quoteReplacement(replacement));
+            }
+            return source.replace(nickToHide, replacement);
         }
     }
 
