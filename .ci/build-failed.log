@@ -19,9 +19,9 @@ Fabric Loom: 1.15.5
     private int key = -1;
                 ^
 /home/runner/work/ffwwwwf/ffwwwwf/src/main/java/fun/wonderful/client/modules/impl/TestModules.java:578: error: cannot find symbol
-            Text content = message.getContent();
+            Text content = message.message();
                                   ^
-  symbol:   method getContent()
+  symbol:   method message()
   location: variable message of type GameMessageS2CPacket
 Note: Some input files use or override a deprecated API.
 Note: Recompile with -Xlint:deprecation for details.
@@ -31,7 +31,7 @@ Note: Recompile with -Xlint:unchecked for details.
 1 warning
 
 > Task :compileJava FAILED
-gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1788556582280.json
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_5-1788556757327.json
 
 [Incubating] Problems report is available at: file:///home/runner/work/ffwwwwf/ffwwwwf/build/reports/problems/problems-report.html
 
@@ -48,9 +48,9 @@ Execution failed for task ':compileJava'.
   Note: Some input files use or override a deprecated API.
   Note: Some input files use unchecked or unsafe operations.
   /home/runner/work/ffwwwwf/ffwwwwf/src/main/java/fun/wonderful/client/modules/impl/TestModules.java:578: error: cannot find symbol
-              Text content = message.getContent();
+              Text content = message.message();
                                     ^
-    symbol:   method getContent()
+    symbol:   method message()
     location: variable message of type GameMessageS2CPacket
   1 error
   1 warning
@@ -103,9 +103,9 @@ Note: Recompile with -Xlint:unchecked for details.
 Note: Some input files use or override a deprecated API.
 Note: Some input files use unchecked or unsafe operations.
 /home/runner/work/ffwwwwf/ffwwwwf/src/main/java/fun/wonderful/client/modules/impl/TestModules.java:578: error: cannot find symbol
-            Text content = message.getContent();
+            Text content = message.message();
                                   ^
-  symbol:   method getContent()
+  symbol:   method message()
   location: variable message of type GameMessageS2CPacket
 1 error
 1 warning
@@ -232,5 +232,5 @@ Note: Some input files use unchecked or unsafe operations.
 	... 30 more
 
 
-BUILD FAILED in 1m 3s
+BUILD FAILED in 1m 1s
 1 actionable task: 1 executed
