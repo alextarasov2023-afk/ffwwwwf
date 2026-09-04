@@ -172,6 +172,17 @@ public class RotationStorage implements QClient {
         }
     }
 
+    /**
+     * Принудительный возврат: текущая задача AIM переключается на RESET,
+     * и ротация плавно возвращается к свободному взгляду игрока
+     * (используется KillAura после удара).
+     */
+    public void returnToView() {
+        if (currentTask.equals(RotationTask.AIM)) {
+            currentTask(RotationTask.RESET);
+        }
+    }
+
     public boolean isRotating() {
         return !currentTask.equals(RotationTask.IDLE);
     }

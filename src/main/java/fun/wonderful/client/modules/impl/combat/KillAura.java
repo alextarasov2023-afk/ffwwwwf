@@ -31,6 +31,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+/**
+ * KillAura = аим-бот + триггер-бот.
+ * Цикл: наводка (плавный доворот ротации к цели, freelook активен только
+ * на это время) -> удар строго когда прицел реально смотрит в хитбокс
+ * (триггер-условие) -> возврат взгляда обратно к камере -> пауза -> повтор.
+ */
 public class KillAura extends Module {
 
     public static KillAura INSTANCE = new KillAura();
@@ -38,61 +44,57 @@ public class KillAura extends Module {
     public final FloatSetting range = new FloatSetting("Дистанция", 3.5f, 1.0f, 6.0f, 0.1f);
     public final FloatSetting fov = new FloatSetting("FOV", 180f, 30f, 360f, 5f);
     public final ModeSetting critMode = new ModeSetting("Крит", "Smart Crit", "Smart Crit", "Only Crit", "Off");
-    public final BooleanSetting sprintReset = new BooleanSetting("Сброс спринта", true);
     public final BooleanSetting noEatAttack = new BooleanSetting("Не атаковать когда ешь", true);
     public final BooleanSetting onlyPlayers = new BooleanSetting("Только игроки", false);
     public final BooleanSetting throughWalls = new BooleanSetting("Сквозь стены", false);
     public final BooleanSetting ignoreBots = new BooleanSetting("Игнорировать ботов", true);
     public final BooleanSetting ignoreFriends = new BooleanSetting("Не бить друзей", true);
-    public final BooleanSetting crosshairOnly = new BooleanSetting("Только в прицел", false);
     public final FloatSetting attackDelay = new FloatSetting("Задержка удара", 5f, 0f, 10f, 1f);
 
     // Приоритет выбора цели: ближе / слабее / под прицелом
     public final ModeSetting priority = new ModeSetting("Приоритет", "Дистанция", "Дистанция", "Здоровье", "Угол");
 
-    // Rotation modes: Smooth (silent-like) vs Snap (aim then wait)
-    public final ModeSetting rotationMode = new ModeSetting("Ротация", "Smooth", "Smooth", "Snap");
+    // Скорость доворота ротации (°/тик) и замедление у цели
     public final FloatSetting rotationSpeed = new FloatSetting("Скорость ротации", 35f, 5f, 90f, 1f);
 
-    // Target modes: Free (freelook) / Default (normal) / Focused (locks to target when pressing forward)
-    public final ModeSetting targetMode = new ModeSetting("Прицел", "Default", "Free", "Default", "Focused");
+    /** Сколько тиков пытаемся навестись без удара, прежде чем вернуть взгляд. */
+    private static final int AIM_TIMEOUT_TICKS = 40;
 
-    private Entity target;
+    private enum AuraState {IDLE, AIM, RETURN, COOLDOWN}
+
     private Entity currentTarget;
-    public Entity getLastTarget() { return currentTarget; }
 
-    private boolean needSprintReset = false;
-    private boolean sprintResetDone = false;
+    public Entity getLastTarget() {
+        return currentTarget;
+    }
+
+    private AuraState state = AuraState.IDLE;
+    private int stateTicks;
     private int lastAttackTick = -100;
     private int currentTick = 0;
 
-    private boolean rotationsInitialized = false;
-    private float currentYaw = 0f;
-    private float currentPitch = 0f;
-    private float targetYaw = 0f;
-    private float targetPitch = 0f;
-    private float snapYaw = 0f;
-    private float snapPitch = 0f;
-    private boolean snapLocked = false;
-    private int snapCooldown = 0;
+    // Желаемая серверная ротация (плавный доворот с замедлением у цели)
+    private float aimYaw;
+    private float aimPitch;
+    private float targetYaw;
+    private float targetPitch;
 
     public KillAura() {
-        super("KillAura", "Атакует цели в радиусе с плавной наводкой", ModuleCategory.COMBAT);
-        addSettings(range, fov, critMode, sprintReset, noEatAttack, onlyPlayers, throughWalls,
-                ignoreBots, ignoreFriends, crosshairOnly, attackDelay, priority, rotationMode,
-                rotationSpeed, targetMode);
+        super("KillAura", "Аим + триггер: наводит на цель, бьёт в прицеле, возвращает взгляд", ModuleCategory.COMBAT);
+        addSettings(range, fov, critMode, noEatAttack, onlyPlayers, throughWalls,
+                ignoreBots, ignoreFriends, attackDelay, priority, rotationSpeed);
     }
 
     @Override
     public void onDisable() {
-        needSprintReset = false;
-        sprintResetDone = false;
-        target = null;
         currentTarget = null;
-        rotationsInitialized = false;
-        snapLocked = false;
-        snapCooldown = 0;
-        stopRotations();
+        setState(AuraState.IDLE);
+        // Ловили цель — взгляд плавно доедет назад сам (RotationStorage завершит возврат)
+        if (isRotating()) {
+            RotationStorage.instance.returnToView();
+        } else {
+            stopRotations();
+        }
         super.onDisable();
     }
 
@@ -100,128 +102,122 @@ public class KillAura extends Module {
     public void onUpdate(EventUpdate event) {
         if (mc.player == null || mc.world == null) return;
         currentTick++;
+        stateTicks++;
 
-        // Инициализация ротации один раз от текущего взгляда (0/0 — валидные углы,
-        // поэтому сравнение с нулём заменили на явный флаг)
-        if (!rotationsInitialized) {
-            currentYaw = mc.player.getYaw();
-            currentPitch = mc.player.getPitch();
-            rotationsInitialized = true;
-        }
-
-        target = findTarget();
+        Entity target = findTarget();
         if (target == null) {
-            needSprintReset = false;
-            sprintResetDone = false;
             currentTarget = null;
-            snapLocked = false;
-            snapCooldown = 0;
-            if (RotationStorage.instance != null && RotationStorage.instance.isRotating()) {
-                stopRotations();
+            // Цель потеряна прямо во время наводки — возвращаем взгляд назад
+            if (state == AuraState.AIM) {
+                returnAim();
+            } else if (state == AuraState.RETURN && !isRotating()) {
+                setState(AuraState.COOLDOWN);
             }
             return;
         }
         currentTarget = target;
 
-        calculateRotationToTarget(target);
-
-        // Snap mode: wait until hit, then release
-        if ("Snap".equals(rotationMode.getCurrent())) {
-            if (snapCooldown > 0) {
-                snapCooldown--;
-                if (snapCooldown == 0) {
-                    snapLocked = false;
+        switch (state) {
+            case IDLE, COOLDOWN -> {
+                // Между ударами ждём заданную задержку, затем начинаем наводку
+                if (currentTick - lastAttackTick >= attackDelayTicks()) {
+                    beginAim();
                 }
             }
-            if (!snapLocked) {
-                snapYaw = targetYaw;
-                snapPitch = targetPitch;
-                snapLocked = true;
-                snapCooldown = 30; // hold for 30 ticks (~1.5s) or until hit
+            case AIM -> aimTick(target);
+            case RETURN -> {
+                // Ждём, пока RotationStorage вернёт взгляд к камере
+                if (!isRotating()) {
+                    setState(AuraState.COOLDOWN);
+                }
             }
-            currentYaw = snapYaw;
-            currentPitch = snapPitch;
-            RotationStorage.update(new Rotation(snapYaw, snapPitch),
-                    100f, 100f, 100f, 100f, 100, 0, isSilent());
-        } else {
-            // Smooth mode
-            smoothAim();
-            float speed = rotationSpeed.get();
-            float pitchSpeed = speed * 0.72f;
-            RotationStorage.update(new Rotation(currentYaw, currentPitch),
-                    speed, pitchSpeed, speed, pitchSpeed, 100, 0, isSilent());
+            default -> {
+            }
+        }
+    }
+
+    /** Начало наводки: доворот стартует от текущего взгляда игрока. */
+    private void beginAim() {
+        aimYaw = mc.player.getYaw();
+        aimPitch = mc.player.getPitch();
+        setState(AuraState.AIM);
+    }
+
+    /** Фаза наводки: плавный доворот + удар, как только прицел на хитбоксе. */
+    private void aimTick(Entity target) {
+        calculateRotationToTarget(target);
+        stepAim();
+
+        // Наводка: freelook активен ровно на это время (clientRotation = false)
+        RotationStorage.update(new Rotation(aimYaw, aimPitch),
+                180f, 130f, returnSpeed(), returnSpeed(),
+                AIM_TIMEOUT_TICKS, 100, false);
+
+        // Не удалось ударить за отведённое время — возвращаем взгляд
+        if (stateTicks >= AIM_TIMEOUT_TICKS) {
+            returnAim();
+            return;
         }
 
-        if (currentTick - lastAttackTick < attackDelayTicks()) return;
-        if (noEatAttack.isState() && isEating()) return;
-
-        if (!canSeeTarget()) return;
-
-        boolean isMace = mc.player.getMainHandStack().getItem() instanceof MaceItem;
-        if (!canCritHit(isMace)) return;
-
-        // Легит-режим: бьём только когда прицел реально наведён на хитбокс
-        if (crosshairOnly.isState() && !isTargetInCrosshair(target)) return;
-
-        // Focused mode: when pressing forward, move toward target
-        if ("Focused".equals(targetMode.getCurrent())) {
-            float yawDiff = MathHelper.wrapDegrees(targetYaw - mc.player.getYaw());
-            if (Math.abs(yawDiff) > 90f) return; // don't attack if facing away
+        if (canHitTarget()) {
+            attack(target);
         }
+    }
 
+    /** Удар: атака + свинг, после — возврат взгляда обратно к камере. */
+    private void attack(Entity target) {
         mc.interactionManager.attackEntity(mc.player, target);
         mc.player.swingHand(Hand.MAIN_HAND);
-
         lastAttackTick = currentTick;
+        returnAim();
+    }
 
-        // Snap: release after hit
-        if ("Snap".equals(rotationMode.getCurrent()) && snapLocked) {
-            snapLocked = false;
-            snapCooldown = 5;
+    /** После удара/таймаута: отпускаем ротацию — она плавно возвращается к камере. */
+    private void returnAim() {
+        if (isRotating()) {
+            RotationStorage.instance.returnToView();
         }
+        setState(AuraState.RETURN);
+    }
 
-        // Sprint reset
-        if (sprintReset.isState()) {
-            needSprintReset = true;
-            sprintResetDone = false;
-        }
+    private boolean isRotating() {
+        return RotationStorage.instance != null && RotationStorage.instance.isRotating();
     }
 
     @EventLink
     public void onMoveInput(EventMoveInput event) {
         if (mc.player == null) return;
 
-        // Sprint reset first (blocks everything else this tick)
-        if (sprintReset.isState() && needSprintReset && !sprintResetDone) {
-            event.setForward(0);
-            event.setStrafe(0);
-            needSprintReset = false;
-            sprintResetDone = true;
-            return;
-        }
-
-        if (target == null) return;
-
-        String mode = targetMode.getCurrent();
-
-        // Free: movement corrected to freelook direction
-        if ("Free".equals(mode)) {
+        // Пока тело повёрнуто к цели (наводка/возврат) — движение задаём
+        // относительно свободной камеры: WASD ведёт туда, куда смотрит игрок
+        if (state == AuraState.AIM || state == AuraState.RETURN) {
             MovingUtil.fixMovementFree(event);
-            return;
-        }
-
-        // Focused: movement corrected toward target rotation
-        if ("Focused".equals(mode)) {
-            float yaw = RotationStorage.instance != null && RotationStorage.instance.targetRotation() != null
-                    ? RotationStorage.instance.targetRotation().getYaw()
-                    : mc.player.getYaw();
-            MovingUtil.fixMovementFocus(event, yaw);
         }
     }
 
-    private boolean isSilent() {
-        // Silent when NOT in Free mode (Free = camera moves freely, server sees hits)
-        return !"Free".equals(targetMode.getCurrent());
+    /** Скорость возврата взгляда после удара — чуть быстрее наводки. */
+    private float returnSpeed() {
+        return Math.min(135f, Math.max(30f, rotationSpeed.get() * 1.5f));
+    }
+
+    private void setState(AuraState next) {
+        state = next;
+        stateTicks = 0;
+    }
+
+    /** Триггер-условие: фактическая ротация игрока смотрит в хитбокс цели. */
+    private boolean canHitTarget() {
+        if (noEatAttack.isState() && isEating()) return false;
+        if (!canSeeTarget()) return false;
+        boolean isMace = mc.player.getMainHandStack().getItem() instanceof MaceItem;
+        if (!canCritHit(isMace)) return false;
+
+        Vec3d eyePos = mc.player.getEyePos();
+        Vec3d lookVec = mc.player.getRotationVec(1.0f);
+        double dist = range.get() + 1.0;
+        Vec3d endPos = eyePos.add(lookVec.x * dist, lookVec.y * dist, lookVec.z * dist);
+        Box box = currentTarget.getBoundingBox().expand(0.1);
+        return box.raycast(eyePos, endPos).isPresent();
     }
 
     /** Задержка между ударами в тиках с учётом TPS сервера (TpsSync). */
@@ -249,8 +245,8 @@ public class KillAura extends Module {
     /** Стена между нами и целью (проверяем точку прицеливания и центр хитбокса). */
     private boolean canSeeTarget() {
         if (throughWalls.isState()) return true;
-        if (raycastMisses(targetPosFor(target))) return true;
-        return raycastMisses(target.getBoundingBox().getCenter());
+        if (raycastMisses(targetPosFor(currentTarget))) return true;
+        return raycastMisses(currentTarget.getBoundingBox().getCenter());
     }
 
     private boolean raycastMisses(Vec3d point) {
@@ -262,21 +258,6 @@ public class KillAura extends Module {
                         net.minecraft.world.RaycastContext.FluidHandling.NONE,
                         mc.player
                 )).getType() == net.minecraft.util.hit.BlockHitResult.Type.MISS;
-    }
-
-    private boolean isTargetInCrosshair(Entity target) {
-        Vec3d eyePos = mc.player.getEyePos();
-        Vec3d lookVec = getLookVector(currentYaw, currentPitch);
-        double dist = range.get() + 1.0;
-        Vec3d endPos = eyePos.add(lookVec.x * dist, lookVec.y * dist, lookVec.z * dist);
-        Box box = target.getBoundingBox().expand(0.1);
-        return box.raycast(eyePos, endPos).isPresent();
-    }
-
-    private Vec3d getLookVector(float yaw, float pitch) {
-        float yr = (float) Math.toRadians(yaw);
-        float pr = (float) Math.toRadians(pitch);
-        return new Vec3d(-Math.sin(yr) * Math.cos(pr), -Math.sin(pr), Math.cos(yr) * Math.cos(pr));
     }
 
     private boolean canCritHit(boolean isMace) {
@@ -345,8 +326,8 @@ public class KillAura extends Module {
 
             float pYaw = (float) (Math.toDegrees(Math.atan2(dz, dx))) - 90f;
             float pPitch = (float) -(Math.toDegrees(Math.atan2(dy, Math.hypot(dx, dz))));
-            double dYaw = Math.abs(MathHelper.wrapDegrees(pYaw - currentYaw));
-            double dPitch = Math.abs(pPitch - currentPitch);
+            double dYaw = Math.abs(MathHelper.wrapDegrees(pYaw - mc.player.getYaw()));
+            double dPitch = Math.abs(pPitch - mc.player.getPitch());
 
             // Доворот важнее дистанции: целимся туда, куда рука дотянется быстрее
             double cost = (dYaw * 0.7 + dPitch) * 10.0 + dist;
@@ -371,16 +352,16 @@ public class KillAura extends Module {
         targetPitch = MathHelper.clamp(targetPitch, -90f, 90f);
     }
 
-    /** Smooth: пропорциональное замедление у цели (плавный «довод» руки). */
-    private void smoothAim() {
+    /** Плавный доворот: пропорциональное замедление у цели («довод» руки). */
+    private void stepAim() {
         float speed = rotationSpeed.get();
         float pitchSpeed = speed * 0.72f;
-        float yawDiff = MathHelper.wrapDegrees(targetYaw - currentYaw);
-        float pitchDiff = targetPitch - currentPitch;
+        float yawDiff = MathHelper.wrapDegrees(targetYaw - aimYaw);
+        float pitchDiff = targetPitch - aimPitch;
         float yawStep = MathHelper.clamp(yawDiff * 0.45f, -speed, speed);
         float pitchStep = MathHelper.clamp(pitchDiff * 0.45f, -pitchSpeed, pitchSpeed);
-        currentYaw = MathHelper.wrapDegrees(currentYaw + yawStep);
-        currentPitch = MathHelper.clamp(currentPitch + pitchStep, -90f, 90f);
+        aimYaw = MathHelper.wrapDegrees(aimYaw + yawStep);
+        aimPitch = MathHelper.clamp(aimPitch + pitchStep, -90f, 90f);
     }
 
     /** Полный набор фильтров цели: жива, не бот/друг, в радиусе и FOV. */

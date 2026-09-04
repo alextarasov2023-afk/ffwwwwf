@@ -4,6 +4,7 @@ import fun.wonderful.api.QClient;
 import fun.wonderful.client.modules.impl.TestModules;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.entity.Entity;
+import net.minecraft.util.math.MathHelper;
 
 /**
  * Помощник Chams-модуля: решает, является ли сущность целью (по настройкам
@@ -27,8 +28,20 @@ public final class ChamsRenderHelper implements QClient {
         if (!TestModules.Chams.isTarget(entity)) {
             return vcp;
         }
-        return new ChamsVertexConsumerProvider(vcp,
-                TestModules.Chams.red, TestModules.Chams.green, TestModules.Chams.blue,
-                TestModules.Chams.opacity);
+
+        int r = TestModules.Chams.red;
+        int g = TestModules.Chams.green;
+        int b = TestModules.Chams.blue;
+
+        // Rainbow: цвет плывёт по кругу оттенков со временем
+        if (TestModules.Chams.rainbow) {
+            float hue = (System.currentTimeMillis() % 4000L) / 4000f;
+            int rgb = MathHelper.hsvToRgb(hue, 0.75f, 1.0f);
+            r = (rgb >> 16) & 0xFF;
+            g = (rgb >> 8) & 0xFF;
+            b = rgb & 0xFF;
+        }
+
+        return new ChamsVertexConsumerProvider(vcp, r, g, b, TestModules.Chams.opacity);
     }
 }

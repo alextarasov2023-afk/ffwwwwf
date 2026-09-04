@@ -1,9 +1,9 @@
 package fun.wonderful.api.storages.implement;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import fun.wonderful.api.QClient;
 import fun.wonderful.api.events.EventInvoker;
 import fun.wonderful.api.events.EventLink;
+import fun.wonderful.api.events.implement.Event3DRender;
 import fun.wonderful.api.events.implement.EventRender;
 import fun.wonderful.api.events.implement.EventUpdate;
 import fun.wonderful.api.storages.implement.helpertstorages.enumvar.ModuleClass;
@@ -18,7 +18,7 @@ import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
-import org.joml.Vector3f;
+import org.joml.Vector4f;
 
 /**
  * Target ESP — метка над игроком, на которого наведён прицел.
@@ -70,11 +70,12 @@ public class TargetEspStorage implements QClient {
 
     /**
      * World-render: проецируем точку над головой цели в экранные координаты
-     * (используем фактическую model-view и projection из EventRender.Game).
-     * Сама метка рисуется позже в 2D (HUD), чтобы рендер был гарантированно виден.
+     * (Event3DRender — фактические position/projection матрицы кадра, та же
+     * математика, что в Nametags). Сама метка рисуется позже в 2D (HUD),
+     * чтобы рендер был гарантированно виден.
      */
     @EventLink
-    public void onRender3D(EventRender.Game event) {
+    public void onRender3D(Event3DRender event) {
         if (targetEspModule == null || !targetEspModule.isEnable()) return;
         if (mc.player == null || mc.world == null) return;
 
@@ -92,33 +93,29 @@ public class TargetEspStorage implements QClient {
             return;
         }
 
-        Vec3d basePos = interpolate(target, event.getPartialTicks());
+        Vec3d basePos = interpolate(target, event.getTickDelta());
         Vec3d anchor = basePos.add(0.0, target.getHeight() + 0.35, 0.0);
 
-        // MVP-проекция: view (фактическая model-view камеры) + projection
-        float[] viewport = {0, 0, (float) mc.getWindow().getFramebufferWidth(), (float) mc.getWindow().getFramebufferHeight()};
-
-        // JOML transformProject внутри умножает позицию на проекцию*view и делит на w.
-        Matrix4f mvp = new Matrix4f(event.getProjectionMatrix())
-                .mul(RenderSystem.getModelViewMatrix());
-        Vector3f clip = new Vector3f();
-        mvp.transformProject((float) anchor.x, (float) anchor.y, (float) anchor.z, clip);
-
-        // NDC [-1..1] -> пиксели экрана
-        float width = viewport[2];
-        float height = viewport[3];
-        float sx = (clip.x * 0.5f + 0.5f) * width;
-        float sy = (1.0f - (clip.y * 0.5f + 0.5f)) * height;
-
-        // Вне экрана/за камерой — не рисуем
-        if (clip.z < -1.0f || clip.z > 1.0f) {
+        // MVP-проекция: proj * position, точка относительно позиции камеры
+        Matrix4f mvp = new Matrix4f(event.getProjectionMatrix()).mul(event.getPositionMatrix());
+        Vec3d rel = anchor.subtract(event.getCamera().getPos());
+        Vector4f clip = new Vector4f((float) rel.x, (float) rel.y, (float) rel.z, 1.0f);
+        clip.mul(mvp);
+        if (clip.w() < 0.01f) {
+            // За камерой — не рисуем
             screenX = Float.NaN;
             screenY = Float.NaN;
             return;
         }
 
-        screenX = sx;
-        screenY = sy;
+        float ndcX = clip.x() / clip.w();
+        float ndcY = clip.y() / clip.w();
+
+        // NDC [-1..1] -> пиксели масштабированного экрана
+        float sw = mc.getWindow().getScaledWidth();
+        float sh = mc.getWindow().getScaledHeight();
+        screenX = (ndcX * 0.5f + 0.5f) * sw;
+        screenY = (1.0f - (ndcY * 0.5f + 0.5f)) * sh;
     }
 
     /** HUD-рендер: рисуем саму метку по сохранённым экранным координатам. */
@@ -128,8 +125,8 @@ public class TargetEspStorage implements QClient {
         if (mc.player == null || mc.world == null) return;
         if (Float.isNaN(screenX) || Float.isNaN(screenY)) return;
 
-        float x = screenX / (float) mc.getWindow().getScaleFactor();
-        float y = screenY / (float) mc.getWindow().getScaleFactor();
+        float x = screenX;
+        float y = screenY;
 
         double pulse = 0.5 + 0.5 * Math.sin(System.currentTimeMillis() / 180.0);
         float size = 4.0f + 1.2f * (float) pulse;

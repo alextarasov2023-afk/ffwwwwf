@@ -5,7 +5,6 @@ import fun.wonderful.api.events.EventLink;
 import fun.wonderful.api.events.implement.EventPacket;
 import fun.wonderful.api.events.implement.EventUpdate;
 import fun.wonderful.api.storages.implement.RotationStorage;
-import fun.wonderful.api.storages.implement.WatermarkStorage;
 import fun.wonderful.api.utils.chat.ChatUtils;
 import fun.wonderful.api.utils.client.ClientSoundPlayer;
 import fun.wonderful.api.utils.math.MathUtils;
@@ -631,25 +630,6 @@ public final class TestModules {
             );
         }
 
-        @Override
-        public void onEnable() {
-            updateWatermarkStorage();
-        }
-
-        @Override
-        public void onDisable() {
-            // Optionally reset to default when disabled
-        }
-
-        private void updateWatermarkStorage() {
-            var elementSetting = getSettings().stream()
-                    .filter(s -> s.name().equals("Element"))
-                    .findFirst();
-            if (elementSetting.isPresent() && elementSetting.get() instanceof ModeSetting mode) {
-                WatermarkStorage.INSTANCE.setSelectedElement(WatermarkStorage.HudElement.valueOf(mode.getCurrent()));
-            }
-        }
-
         private BooleanSetting bool(String name) {
             return (BooleanSetting) getSettings().stream()
                     .filter(s -> s.name().equals(name) && s instanceof BooleanSetting)
@@ -666,6 +646,7 @@ public final class TestModules {
     public static class Chams extends Module {
         // Статический снимок настроек — читается из миксина рендера EntityRenderDispatcherMixin
         public static boolean enabled;
+        public static boolean rainbow;
         public static boolean players = true;
         public static boolean mobs = true;
         public static boolean animals;
@@ -720,6 +701,8 @@ public final class TestModules {
             blue = (int) (b != null ? b.get() : 255);
             opacity = o != null ? o.get() : 0.55f;
             range = rg != null ? rg.get() : 64f;
+            ModeSetting m = mode();
+            rainbow = m != null && m.is("Rainbow");
             ListSetting t = list("Targets");
             players = t != null && t.is("Players");
             mobs = t != null && t.is("Mobs");
@@ -742,6 +725,12 @@ public final class TestModules {
         private FloatSetting setting(String name) {
             return (FloatSetting) getSettings().stream()
                     .filter(s -> s.name().equals(name) && s instanceof FloatSetting)
+                    .findFirst().orElse(null);
+        }
+
+        private ModeSetting mode() {
+            return (ModeSetting) getSettings().stream()
+                    .filter(s -> s.name().equals("Mode") && s instanceof ModeSetting)
                     .findFirst().orElse(null);
         }
 

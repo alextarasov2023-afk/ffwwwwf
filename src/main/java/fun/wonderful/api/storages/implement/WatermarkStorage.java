@@ -1,6 +1,5 @@
 package fun.wonderful.api.storages.implement;
 
-import lombok.Getter;
 import fun.wonderful.api.QClient;
 import fun.wonderful.api.events.EventInvoker;
 import fun.wonderful.api.events.EventLink;
@@ -16,7 +15,6 @@ import fun.wonderful.api.utils.render.fonts.msdf.Fonts;
 import fun.wonderful.client.modules.Module;
 import fun.wonderful.client.modules.impl.TestModules;
 import fun.wonderful.client.modules.settings.implement.BooleanSetting;
-import fun.wonderful.client.modules.settings.implement.ModeSetting;
 import net.minecraft.client.network.PlayerListEntry;
 
 import java.util.Locale;
@@ -227,34 +225,5 @@ public class WatermarkStorage implements QClient {
         }
     }
 
-    public HudElement getSelectedElement() {
-        if (watermarkModule != null) {
-            for (var setting : watermarkModule.getSettings()) {
-                if (setting.name().equals("Element") && setting instanceof ModeSetting mode) {
-                    try {
-                        return HudElement.valueOf(mode.getCurrent());
-                    } catch (IllegalArgumentException ignored) {
-                    }
-                }
-            }
-        }
-        return HudElement.Name;
-    }
-
-    public void setSelectedElement(HudElement element) {
-        // Handled by reading from module settings
-    }
-
-    public enum HudElement {
-        Name("Name"),
-        Server("Server");
-
-        @Getter
-        private final String displayName;
-
-        HudElement(String displayName) {
-            this.displayName = displayName;
-        }
-    }
 }
 
