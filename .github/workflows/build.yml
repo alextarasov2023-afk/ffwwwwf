@@ -92,11 +92,22 @@ jobs:
           CODE=$?
           tail -n 80 build.log
           if [ $CODE -ne 0 ]; then
+            # Диагностика: доступные методы классов MC из jar лума (для починки API-имён)
+            {
+              for j in $(find ~/.gradle/caches/fabric-loom -name "*.jar" 2>/dev/null | grep -v sources | grep -v javadoc); do
+                if unzip -l "$j" 2>/dev/null | grep -q "GameMessageS2CPacket"; then
+                  echo "== $j"
+                  javap -cp "$j" net.minecraft.network.packet.s2c.play.GameMessageS2CPacket || true
+                  break
+                fi
+              done
+            } > .ci-javap.txt 2>&1 || true
             git config user.name "arena-ai-coding-agent[bot]"
             git config user.email "arena-ai-coding-agent[bot]@users.noreply.github.com"
             mkdir -p .ci
             cp build.log .ci/build-failed.log
-            git add .ci/build-failed.log
+            mv .ci-javap.txt .ci/javap.txt || true
+            git add .ci || true
             git commit -m "ci: лог неудавшейся сборки [skip ci]" || true
             git push || true
           fi

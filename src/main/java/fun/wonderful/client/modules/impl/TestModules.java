@@ -575,7 +575,7 @@ public final class TestModules {
             if (!(event.getPacket() instanceof GameMessageS2CPacket message)) return;
 
             String myNick = mc.player.getName().getString();
-            Text content = message.getContent();
+            Text content = message.message();
             if (!content.getString().contains(myNick)) return;
 
             // Отменяем ванильный показ и добавляем замаскированную копию.
