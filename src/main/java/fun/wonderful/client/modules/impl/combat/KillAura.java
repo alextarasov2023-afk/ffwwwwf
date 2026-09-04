@@ -32,10 +32,11 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * KillAura = аим-бот + триггер-бот.
- * Цикл: наводка (плавный доворот ротации к цели, freelook активен только
- * на это время) -> удар строго когда прицел реально смотрит в хитбокс
- * (триггер-условие) -> возврат взгляда обратно к камере -> пауза -> повтор.
+ * KillAura = аим-бот + триггер-бот с легитным боем.
+ * Цикл: наводка (ПЛАВНАЯ silent-ротация — камера не дёргается, freelook
+ * активен только на время наводки) -> подготовка крита (автопрыжок, если
+ * мы на земле) -> сброс спринта (стоп на 1 тик) -> удар строго когда прицел
+ * реально смотрит в хитбокс -> плавный возврат взгляда к камере -> пауза.
  */
 public class KillAura extends Module {
 
@@ -44,6 +45,7 @@ public class KillAura extends Module {
     public final FloatSetting range = new FloatSetting("Дистанция", 3.5f, 1.0f, 6.0f, 0.1f);
     public final FloatSetting fov = new FloatSetting("FOV", 180f, 30f, 360f, 5f);
     public final ModeSetting critMode = new ModeSetting("Крит", "Smart Crit", "Smart Crit", "Only Crit", "Off");
+    public final BooleanSetting sprintReset = new BooleanSetting("Сброс спринта", true);
     public final BooleanSetting noEatAttack = new BooleanSetting("Не атаковать когда ешь", true);
     public final BooleanSetting onlyPlayers = new BooleanSetting("Только игроки", false);
     public final BooleanSetting throughWalls = new BooleanSetting("Сквозь стены", false);
@@ -60,7 +62,7 @@ public class KillAura extends Module {
     /** Сколько тиков пытаемся навестись без удара, прежде чем вернуть взгляд. */
     private static final int AIM_TIMEOUT_TICKS = 40;
 
-    private enum AuraState {IDLE, AIM, RETURN, COOLDOWN}
+    private enum AuraState {IDLE, AIM, SPRINT_RESET, RETURN, COOLDOWN}
 
     private Entity currentTarget;
 
@@ -71,6 +73,7 @@ public class KillAura extends Module {
     private AuraState state = AuraState.IDLE;
     private int stateTicks;
     private int lastAttackTick = -100;
+    private int lastJumpTick = -100;
     private int currentTick = 0;
 
     // Желаемая серверная ротация (плавный доворот с замедлением у цели)
@@ -81,13 +84,14 @@ public class KillAura extends Module {
 
     public KillAura() {
         super("KillAura", "Аим + триггер: наводит на цель, бьёт в прицеле, возвращает взгляд", ModuleCategory.COMBAT);
-        addSettings(range, fov, critMode, noEatAttack, onlyPlayers, throughWalls,
+        addSettings(range, fov, critMode, sprintReset, noEatAttack, onlyPlayers, throughWalls,
                 ignoreBots, ignoreFriends, attackDelay, priority, rotationSpeed);
     }
 
     @Override
     public void onDisable() {
         currentTarget = null;
+        lastJumpTick = -100;
         setState(AuraState.IDLE);
         // Ловили цель — взгляд плавно доедет назад сам (RotationStorage завершит возврат)
         if (isRotating()) {
@@ -125,6 +129,7 @@ public class KillAura extends Module {
                 }
             }
             case AIM -> aimTick(target);
+            case SPRINT_RESET -> sprintResetTick(target);
             case RETURN -> {
                 // Ждём, пока RotationStorage вернёт взгляд к камере
                 if (!isRotating()) {
@@ -143,14 +148,16 @@ public class KillAura extends Module {
         setState(AuraState.AIM);
     }
 
-    /** Фаза наводки: плавный доворот + удар, как только прицел на хитбоксе. */
+    /** Фаза наводки: ПЛАВНАЯ silent-ротация + подготовка крита/спринта + удар. */
     private void aimTick(Entity target) {
         calculateRotationToTarget(target);
         stepAim();
 
-        // Наводка: freelook активен ровно на это время (clientRotation = false)
+        // Silent-наводка: скорость из настройки (не snap), freelook активен
+        // ровно на это время (clientRotation = false) — камера у мышки
+        float speed = rotationSpeed.get();
         RotationStorage.update(new Rotation(aimYaw, aimPitch),
-                180f, 130f, returnSpeed(), returnSpeed(),
+                speed, speed * 0.72f, returnSpeed(), returnSpeed(),
                 AIM_TIMEOUT_TICKS, 100, false);
 
         // Не удалось ударить за отведённое время — возвращаем взгляд
@@ -159,9 +166,60 @@ public class KillAura extends Module {
             return;
         }
 
-        if (canHitTarget()) {
+        if (!hitReady(target)) return;
+
+        // Крит: на земле с готовым кулдауном — прыжок, бьём в падении
+        if (shouldJumpForCrit()) {
+            jumpForCrit();
+            return;
+        }
+
+        // Сброс спринта: один тик без движения, затем удар
+        if (sprintReset.isState() && mc.player.isSprinting()) {
+            mc.player.setSprinting(false);
+            setState(AuraState.SPRINT_RESET);
+            return;
+        }
+
+        attack(target);
+    }
+
+    /** Тик сброса спринта: стоим на месте, держим ротацию на цели, после — удар. */
+    private void sprintResetTick(Entity target) {
+        calculateRotationToTarget(target);
+        stepAim();
+        float speed = rotationSpeed.get();
+        RotationStorage.update(new Rotation(aimYaw, aimPitch),
+                speed, speed * 0.72f, returnSpeed(), returnSpeed(),
+                AIM_TIMEOUT_TICKS, 100, false);
+        mc.player.setSprinting(false);
+
+        if (stateTicks >= 3 || !isValidTarget(target)) {
+            // Спринт не сбросился/цель пропала — возвращаемся к обычному циклу
+            beginAim();
+            return;
+        }
+        if (hitReady(target)) {
             attack(target);
         }
+    }
+
+    /** Прыжок для крита (ванильная высота 0.42) — бьём в фазе падения. */
+    private void jumpForCrit() {
+        mc.player.setVelocity(mc.player.getVelocity().x, 0.42, mc.player.getVelocity().z);
+        lastJumpTick = currentTick;
+    }
+
+    /**
+     * Прыгать ли за критом: включён крит-режим, мы на земле, кулдаун готов,
+     * прыгаем не чаще раза в 10 тиков и не зажат Shift.
+     */
+    private boolean shouldJumpForCrit() {
+        if (!"Smart Crit".equals(critMode.getCurrent())) return false;
+        if (!mc.player.isOnGround()) return false;
+        if (mc.player.getAttackCooldownProgress(0.5f) < 0.96f) return false;
+        if (mc.options.sneakKey.isPressed()) return false;
+        return currentTick - lastJumpTick >= 10;
     }
 
     /** Удар: атака + свинг, после — возврат взгляда обратно к камере. */
@@ -188,6 +246,14 @@ public class KillAura extends Module {
     public void onMoveInput(EventMoveInput event) {
         if (mc.player == null) return;
 
+        // Сброс спринта: тик полного стопа (без ввода движения спринт сбрасывается)
+        if (state == AuraState.SPRINT_RESET) {
+            event.setForward(0f);
+            event.setStrafe(0f);
+            event.setJump(false);
+            return;
+        }
+
         // Пока тело повёрнуто к цели (наводка/возврат) — движение задаём
         // относительно свободной камеры: WASD ведёт туда, куда смотрит игрок
         if (state == AuraState.AIM || state == AuraState.RETURN) {
@@ -206,9 +272,12 @@ public class KillAura extends Module {
     }
 
     /** Триггер-условие: фактическая ротация игрока смотрит в хитбокс цели. */
-    private boolean canHitTarget() {
+    private boolean hitReady(Entity target) {
+        if (mc.interactionManager == null) return false;
         if (noEatAttack.isState() && isEating()) return false;
         if (!canSeeTarget()) return false;
+        // Цель могла отойти за время наводки — перепроверяем дистанцию
+        if (mc.player.distanceTo(target) > range.get() + 0.3f) return false;
         boolean isMace = mc.player.getMainHandStack().getItem() instanceof MaceItem;
         if (!canCritHit(isMace)) return false;
 
@@ -273,18 +342,21 @@ public class KillAura extends Module {
         if (isMace) return cooldown >= cooldownThreshold;
         if (forcedAttack) return cooldown >= 0.96f;
 
-        if ("Only Crit".equals(mode)) {
-            return falling && cooldown >= cooldownThreshold;
+        if ("Off".equals(mode)) {
+            return cooldown >= cooldownThreshold;
         }
-        if ("Smart Crit".equals(mode)) {
-            if (falling) {
-                return cooldown >= cooldownThreshold;
-            } else {
-                if (mc.options.jumpKey.isPressed()) return false;
-                return cooldown >= 0.96f;
-            }
+
+        // Крит бывает только в падении — бьём исключительно тогда
+        if (falling) {
+            return cooldown >= cooldownThreshold;
         }
-        return cooldown >= cooldownThreshold;
+
+        // Fallback (Smart Crit): прыжок не дал падения (низкий потолок) —
+        // бьём с земли, иначе аура под потолком никогда не ударит
+        return "Smart Crit".equals(mode)
+                && mc.player.isOnGround()
+                && currentTick - lastJumpTick <= 12
+                && cooldown >= 0.96f;
     }
 
     private boolean isInCobweb() {
