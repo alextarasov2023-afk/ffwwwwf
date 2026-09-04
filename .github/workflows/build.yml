@@ -1,0 +1,95 @@
+name: Build mod
+
+on:
+  push:
+    branches: [arena/01a06e22-ffwwwwf]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14'
+
+      - name: Fetch libs (jna / baritone / nether-pathfinder)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p libs
+
+          # JNA обязателен для компиляции (com.sun.jna.* в RPC-утилитах)
+          curl -fsSL -o libs/jna-5.15.0.jar \
+            https://repo.maven.apache.org/maven2/net/java/dev/jna/jna/5.15.0/jna-5.15.0.jar
+
+          placeholder() {
+            mkdir -p /tmp/emptyd
+            rm -f "$1"
+            (cd /tmp/emptyd && zip -q -r "$OLDPWD/$1" .)
+          }
+
+          # Baritone — вкладывается в jar как nested jar (META-INF/jars)
+          BARITONE=$(gh api 'repos/cabaletta/baritone/releases?per_page=100' --paginate \
+            --jq '.[].assets[].browser_download_url' | grep -F 'baritone-standalone-fabric-1.13.1.jar' | head -1 || true)
+          if [ -z "$BARITONE" ]; then
+            BARITONE=$(gh api 'repos/cabaletta/baritone/releases?per_page=100' --paginate \
+              --jq '.[].assets[].browser_download_url' | grep 'baritone-standalone-fabric-1.21' | head -1 || true)
+          fi
+          if [ -z "$BARITONE" ]; then
+            BARITONE=$(gh api 'repos/cabaletta/baritone/releases?per_page=100' --paginate \
+              --jq '.[].assets[].browser_download_url' | grep 'baritone-standalone-fabric' | head -1 || true)
+          fi
+          if [ -n "$BARITONE" ]; then
+            echo "Baritone: $BARITONE"
+            curl -fsSL -o libs/baritone-standalone-fabric-1.13.1.jar "$BARITONE"
+          else
+            echo "WARN: baritone-standalone-fabric не найден, кладём пустой jar (сборка без nested baritone)"
+            placeholder libs/baritone-standalone-fabric-1.13.1.jar
+          fi
+
+          # Nether Pathfinder — shaded в jar
+          NP=$(gh api 'repos/leijurv/Nether-Pathfinder/releases?per_page=100' --paginate \
+            --jq '.[].assets[].browser_download_url' | grep -E 'nether-pathfinder-1(\.[0-9]+)*\.jar' | head -1 || true)
+          if [ -n "$NP" ]; then
+            echo "NetherPathfinder: $NP"
+            curl -fsSL -o libs/nether-pathfinder-1.4.1.jar "$NP"
+          else
+            echo "WARN: nether-pathfinder не найден, кладём пустой jar"
+            placeholder libs/nether-pathfinder-1.4.1.jar
+          fi
+
+          ls -la libs
+
+      - name: Build (remapJar)
+        run: gradle remapJar --no-daemon -Dorg.gradle.jvmargs=-Xmx2G
+
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: wonderful-mod
+          path: build/libs/*.jar
+          if-no-files-found: error
+
+      - name: Commit gradle wrapper (для локальных сборок)
+        run: |
+          gradle wrapper --gradle-version 8.14 --no-daemon
+          git config user.name "arena-ai-coding-agent[bot]"
+          git config user.email "arena-ai-coding-agent[bot]@users.noreply.github.com"
+          git add gradlew gradlew.bat gradle/wrapper
+          git diff --cached --quiet || git commit -m "chore: добавить gradle wrapper 8.14 [skip ci]"
+          git push
