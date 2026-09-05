@@ -375,7 +375,10 @@ public class ThemePanel {
         int acTop = ColorUtils.applyAlpha(accent(panelY + 3f), (int) (165 * a));
         int acBot = ColorUtils.applyAlpha(accent(panelY + panelH - 3f), (int) (110 * a));
 
-        // Тень + блюр + фон — как у окон категорий
+        // Акцентное свечение + тень + блюр + фон
+        int glowC = ColorUtils.applyAlpha(ClickGuiScreen.accent(), 0.20f * a);
+        RenderUtils.drawShadow(ms, panelX - 1f, panelY - 1f, W + 2f, panelH + 2f, 13f, 15f,
+                glowC, glowC, glowC, glowC);
         RenderUtils.drawShadow(ms, panelX, panelY, W, panelH, 11f, 12f,
                 ColorUtils.applyAlpha(ColorUtils.rgba(0, 0, 0, 255), 0.5f));
         RenderUtils.drawBlur(ms, panelX, panelY, W, panelH, 11f, 9f,

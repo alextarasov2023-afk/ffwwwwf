@@ -63,7 +63,7 @@ public class ClickGuiScreen extends Screen {
     private long lastFrameNanos;
 
     // Анимации
-    private final AnimationUtils openAnim = new AnimationUtils(0f, 9f, Easings.CUBIC_OUT);
+    private final AnimationUtils openAnim = new AnimationUtils(0f, 9f, Easings.BACK_OUT);
     private final AnimationUtils tooltipAnim = new AnimationUtils(0f, 12f, Easings.CUBIC_OUT);
     private final AnimationUtils searchAnim = new AnimationUtils(0f, 10f, Easings.CUBIC_OUT);
 
@@ -138,9 +138,10 @@ public class ClickGuiScreen extends Screen {
             return;
         }
 
-        // Панель: мягкий въезд (масштаб + сдвиг вверх + фейд)
-        float scale = 0.965f + 0.035f * p;
-        float rise = (1f - p) * 10f;
+        // Панель: мягкий въезд с лёгким пружинным перелётом (overshoot)
+        float pRaw = MathHelper.clamp(openAnim.getValue(), 0f, 1.06f);
+        float scale = 0.955f + 0.045f * pRaw;
+        float rise = (1f - p) * 12f;
 
         panelW = Math.min(Math.max(MIN_W, 460f), this.width - 20f);
         panelH = Math.min(Math.max(MIN_H, 320f), this.height - 24f);
@@ -162,7 +163,10 @@ public class ClickGuiScreen extends Screen {
 
         int ac = accent();
 
-        // Панель: тень + блюр + фон + тонкая обводка
+        // Панель: акцентное свечение + тень + блюр + фон + тонкая обводка
+        int glowC = ColorUtils.applyAlpha(ac, 0.20f * p);
+        RenderUtils.drawShadow(ms, panelX - 1f, py - 1f, panelW + 2f, panelH + 2f, 13f, 15f,
+                glowC, glowC, glowC, glowC);
         RenderUtils.drawShadow(ms, panelX, py, panelW, panelH, 12f, 16f,
                 ColorUtils.applyAlpha(ColorUtils.rgba(0, 0, 0, 255), 0.55f * p));
         RenderUtils.drawBlur(ms, panelX, py, panelW, panelH, 12f, 10f,
@@ -174,6 +178,13 @@ public class ClickGuiScreen extends Screen {
                 ColorUtils.rgba(255, 255, 255, (int) (22 * p)),
                 ColorUtils.rgba(0, 0, 0, (int) (50 * p)),
                 ColorUtils.rgba(0, 0, 0, (int) (50 * p)));
+
+        // Верхняя акцентная линия: разгорается от краёв к центру
+        float halfW = (panelW - 20f) / 2f;
+        RenderUtils.drawGradientRect(ms, panelX + 10f, py + 0.8f, halfW, 1.2f, 1f,
+                ColorUtils.applyAlpha(ac, 0.0f), ColorUtils.applyAlpha(ac, 0.85f * p), true);
+        RenderUtils.drawGradientRect(ms, panelX + 10f + halfW, py + 0.8f, halfW, 1.2f, 1f,
+                ColorUtils.applyAlpha(ac, 0.85f * p), ColorUtils.applyAlpha(ac, 0.0f), true);
 
         renderHeader(ms, py, p, ac);
         renderRail(ms, mouseX, mouseY, py, dt, p, ac);
@@ -220,6 +231,11 @@ public class ClickGuiScreen extends Screen {
         searchX = panelX + panelW - 14f - searchW;
         searchY = hcy - searchH / 2f;
 
+        if (sp > 0.05f) {
+            int sc = ColorUtils.applyAlpha(ac, 0.26f * sp * p);
+            RenderUtils.drawShadow(ms, searchX - 1f, searchY - 1f, searchW + 2f, searchH + 2f,
+                    (searchH + 2f) / 2f, 6f, sc, sc, sc, sc);
+        }
         RenderUtils.drawRoundedRect(ms, searchX, searchY, searchW, searchH, searchH / 2f,
                 ColorUtils.rgba(255, 255, 255, (int) ((focused ? 16 : 9) * p)));
         RenderUtils.drawRoundedRectOutline(ms, searchX, searchY, searchW, searchH, searchH / 2f, 1f,
@@ -285,7 +301,11 @@ public class ClickGuiScreen extends Screen {
                         ColorUtils.rgba(255, 255, 255, (int) (12 * p)));
             }
 
-            ModuleList.text(ms, 12, c.getName(), railX + 12f, icy - ModuleList.fh(12) / 2f,
+            AnimationUtils ra = btn("rail" + i);
+            ra.update(hov ? 1f : 0f);
+            float rhp = MathHelper.clamp(ra.getValue(), 0f, 1f);
+
+            ModuleList.text(ms, 12, c.getName(), railX + 12f + 2.5f * rhp, icy - ModuleList.fh(12) / 2f,
                     active
                             ? ColorUtils.rgba(240, 243, 250, (int) (248 * p))
                             : ColorUtils.rgba(176, 183, 197, (int) (205 * p)));
@@ -349,6 +369,8 @@ public class ClickGuiScreen extends Screen {
         float hp = MathHelper.clamp(a.getValue(), 0f, 1f);
 
         if (on) {
+            int gc = ColorUtils.applyAlpha(ac, 0.30f * p);
+            RenderUtils.drawShadow(ms, bx, by, bw, BTN_H, BTN_H / 2f, 5f, gc, gc, gc, gc);
             RenderUtils.drawRoundedRect(ms, bx, by, bw, BTN_H, BTN_H / 2f,
                     ColorUtils.applyAlpha(ac, 0.20f * p));
         } else if (hp > 0.03f) {
@@ -372,11 +394,14 @@ public class ClickGuiScreen extends Screen {
         a.update(hov || on ? 1f : 0f);
         float hp = MathHelper.clamp(a.getValue(), 0f, 1f);
 
-        if (hp > 0.03f) {
+        if (on) {
+            int gc = ColorUtils.applyAlpha(ac, 0.30f * p);
+            RenderUtils.drawShadow(ms, bx, by, size, size, size / 2f, 5f, gc, gc, gc, gc);
             RenderUtils.drawRoundedRect(ms, bx, by, size, size, size / 2f,
-                    on
-                            ? ColorUtils.applyAlpha(ac, 0.20f * p)
-                            : ColorUtils.rgba(255, 255, 255, (int) (16 * hp * p)));
+                    ColorUtils.applyAlpha(ac, 0.20f * p));
+        } else if (hp > 0.03f) {
+            RenderUtils.drawRoundedRect(ms, bx, by, size, size, size / 2f,
+                    ColorUtils.rgba(255, 255, 255, (int) (16 * hp * p)));
         }
         GuiIcons.draw(ms, "theme_palette", bx + 3f, by + 3f, size - 6f,
                 ColorUtils.applyAlpha(
