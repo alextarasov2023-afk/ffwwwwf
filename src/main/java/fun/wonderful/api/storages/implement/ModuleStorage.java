@@ -17,6 +17,7 @@ import fun.wonderful.client.modules.impl.movement.Sprint;
 import fun.wonderful.client.modules.impl.player.AutoEat;
 import fun.wonderful.client.modules.impl.player.FastPlace;
 import fun.wonderful.client.modules.impl.render.FreeLook;
+import fun.wonderful.client.modules.impl.render.Hud;
 
 @Getter
 @Setter
@@ -56,6 +57,7 @@ public class ModuleStorage implements QClient {
         list.add(new TestModules.NameProtect());
 
         // ===== Render =====
+        list.add(Hud.INSTANCE);
         list.add(FreeLook.INSTANCE);
 
         ModuleClass.INSTANCE.initialize();

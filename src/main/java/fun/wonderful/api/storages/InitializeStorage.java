@@ -33,5 +33,8 @@ public class InitializeStorage implements QClient {
 
         // Рендер уведомлений (слушает EventRender.Default)
         new NotificationRenderer();
+
+        // HUD: ватермарка, таргет-панель, кейбинды, клавиши, стафф
+        new HudStorage();
     }
 }

@@ -37,6 +37,11 @@ public class LocalizationStorage {
         add("Misc", "Misc", "Різне");
         add("Player", "Player", "Гравець");
         add("Язык", "Language", "Мова");
+        add("Худ", "HUD", "Худ");
+        add("Ватермарка", "Watermark", "Ватермарка");
+        add("Кейбинды", "Keybinds", "Хоткеї");
+        add("Клавиши", "Keystrokes", "Клавіші");
+        add("Пинг", "Ping", "Пінг");
         add("Русский", "Russian", "Російська");
         add("Английский", "English", "Англійська");
         add("Украинский", "Ukrainian", "Українська");

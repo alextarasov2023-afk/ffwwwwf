@@ -291,24 +291,20 @@ public class ClickGuiScreen extends Screen {
             }
 
             AnimationUtils ra = btn("rail" + i);
-            ra.update(hov ? 1f : 0f);
+            ra.update(hov || active ? 1f : 0f);
             float rhp = MathHelper.clamp(ra.getValue(), 0f, 1f);
 
-            ModuleList.text(ms, 12, c.getName(), railX + 12f + 2.5f * rhp, icy - ModuleList.fh(12) / 2f,
+            // Иконка категории: серый → акцент при активности/наведении
+            int iconGray = ColorUtils.rgba(164, 171, 186, 255);
+            int iconCol = active ? ac : ColorUtils.interpolateColor(iconGray, ac, rhp * 0.55f);
+            float iconSz = 13f;
+            CategoryIcons.draw(ms, c, railX + 10f, icy - iconSz / 2f, iconSz,
+                    ColorUtils.applyAlpha(iconCol, (0.78f + 0.22f * rhp) * p));
+
+            ModuleList.text(ms, 12, c.getName(), railX + 31f + 2.5f * rhp, icy - ModuleList.fh(12) / 2f,
                     active
                             ? ColorUtils.rgba(240, 243, 250, (int) (248 * p))
                             : ColorUtils.rgba(176, 183, 197, (int) (205 * p)));
-
-            // Счётчик включённых модулей категории — тусклая цифра справа
-            int cnt = list.enabledCount(c);
-            if (cnt > 0) {
-                String cs = String.valueOf(cnt);
-                ModuleList.text(ms, 10, cs, railX + railW - 4f - ModuleList.tw(10, cs),
-                        icy - ModuleList.fh(10) / 2f,
-                        active
-                                ? ColorUtils.applyAlpha(ac, 0.85f * p)
-                                : ColorUtils.rgba(130, 137, 152, (int) (170 * p)));
-            }
         }
 
         // Вертикальный разделитель колонок

@@ -34,8 +34,8 @@ import java.util.Set;
 /**
  * Список модулей выбранной категории внутри главной панели ClickGUI.
  * ДВА столбика: модули делятся пополам (левый — первая половина, правый —
- * вторая), общий плавный скролл, каскад появления, hover-пилюли, ripple,
- * настройки раскрываются под строкой в своей колонке.
+ * вторая), общий плавный скролл, каскад появления, hover-пилюли, мягкая
+ * вспышка при переключении, настройки раскрываются под строкой в своей колонке.
  */
 class ModuleList {
 
@@ -115,14 +115,6 @@ class ModuleList {
             if (m.getCategory() == category) out.add(m);
         }
         return out;
-    }
-
-    int enabledCount(Module.ModuleCategory category) {
-        int n = 0;
-        for (Module m : modules(category)) {
-            if (m.isEnable()) n++;
-        }
-        return n;
     }
 
     boolean hit(int mx, int my) {
@@ -420,25 +412,14 @@ class ModuleList {
 
         ToggleSwitch.draw(ms, swX, swY, enC, vp, ac);
 
-        // Ripple при переключении: два расходящихся кольца от тумблера
+        // Мягкая вспышка строки при переключении (плавно гаснет, без колец)
         Long tgAt = lastToggleAt.get(m);
         if (tgAt != null) {
-            float age = (System.currentTimeMillis() - tgAt) / 460f;
+            float age = (System.currentTimeMillis() - tgAt) / 420f;
             if (age < 1f) {
-                float cxS = swX + ToggleSwitch.W / 2f;
-                float cyS = swY + ToggleSwitch.H / 2f;
-                for (int ring = 0; ring < 2; ring++) {
-                    float ra = age - ring * 0.22f;
-                    if (ra <= 0f || ra >= 1f) continue;
-                    float ease = 1f - (1f - ra) * (1f - ra);
-                    float rw = ToggleSwitch.W + (5f + 26f * ease) * 2f;
-                    float rh = ToggleSwitch.H + (5f + 26f * ease) * 2f;
-                    RenderUtils.drawRoundedRectOutline(ms, cxS - rw / 2f, cyS - rh / 2f, rw, rh, rh / 2f, 1f,
-                            ColorUtils.applyAlpha(ac, 0.45f * (1f - ra) * vp),
-                            ColorUtils.applyAlpha(ac, 0.45f * (1f - ra) * vp),
-                            ColorUtils.applyAlpha(ac, 0.30f * (1f - ra) * vp),
-                            ColorUtils.applyAlpha(ac, 0.30f * (1f - ra) * vp));
-                }
+                float fl = (1f - age) * (1f - age);
+                RenderUtils.drawRoundedRect(ms, colX + 4f, ry + 0.5f, colW - 8f, ROW_H - 1f, 6f,
+                        ColorUtils.applyAlpha(ac, 0.16f * fl * vp));
             } else {
                 lastToggleAt.remove(m);
             }
