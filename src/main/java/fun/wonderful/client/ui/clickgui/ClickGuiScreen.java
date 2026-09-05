@@ -51,7 +51,7 @@ public class ClickGuiScreen extends Screen {
     private static final float FOOTER_H = 32f;
     private static final float RAIL_W = 118f;
     private static final float RAIL_ITEM_H = 30f;
-    private static final float MIN_W = 340f;
+    private static final float MIN_W = 400f;
     private static final float MIN_H = 230f;
 
     private final List<Module.ModuleCategory> categories = new ArrayList<>();
@@ -153,7 +153,7 @@ public class ClickGuiScreen extends Screen {
         float scale = 0.955f + 0.045f * pRaw;
         float rise = (1f - p) * 12f;
 
-        panelW = Math.min(Math.max(MIN_W, 460f), this.width - 20f);
+        panelW = Math.min(Math.max(MIN_W, 520f), this.width - 20f);
         panelH = Math.min(Math.max(MIN_H, 320f), this.height - 24f);
         panelX = (this.width - panelW) / 2f;
         panelY = (this.height - panelH) / 2f - 6f;

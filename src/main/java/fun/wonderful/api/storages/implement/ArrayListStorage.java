@@ -35,7 +35,7 @@ public class ArrayListStorage implements QClient {
     public static ArrayListStorage INSTANCE;
 
     private static final float X = 8f;
-    private static final float Y0 = 52f;
+    private static final float Y0 = 58f;
     private static final float LINE_H = 15.5f;
 
     private Module hudModule;

@@ -72,22 +72,20 @@ public class Keystrokes extends Module {
         Font f12 = Fonts.getFont("suisse", 12);
         Font f9 = Fonts.getFont("suisse", 9);
         if (f12 == null || f9 == null) return;
-        f12ref = f12;
 
-        // Раскладка: ЛКМ ПКМ / W A S D / пробел — внизу по центру
+        // Раскладка: ЛКМ ПКМ / W A S D / пробел — слева внизу (не мешает хотбару)
         float panelW = key * 3 + gap * 2;
         float rowsH = showCps.isState() ? key : 0f;
         float panelH = rowsH + key * 2 + gap + (key * 0.45f) + gap * 2;
-        float sw = mc.getWindow().getScaledWidth();
         float sh = mc.getWindow().getScaledHeight();
-        float px = (int) (sw / 2f - panelW / 2f);
+        float px = 10f;
         float py = (int) (sh - panelH - 10f + (1f - ap) * 14f);
 
         // Клавиша: блюр-панель + заливка акцентом при нажатии
         float cy = py;
         if (rowsH > 0f) {
-            drawKey(ms, px, cy, panelW / 2f - gap / 2f, key, lmb, lmbClicks.size() + " CPS", f9, ac, ap, sc);
-            drawKey(ms, px + panelW / 2f + gap / 2f, cy, panelW / 2f - gap / 2f, key, rmb, rmbClicks.size() + " CPS", f9, ac, ap, sc);
+            drawKey(ms, px, cy, panelW / 2f - gap / 2f, key, lmb, lmbClicks.size() + " CPS", f9, 9, ac, ap, sc);
+            drawKey(ms, px + panelW / 2f + gap / 2f, cy, panelW / 2f - gap / 2f, key, rmb, rmbClicks.size() + " CPS", f9, 9, ac, ap, sc);
             cy += key + gap;
         }
 
@@ -97,10 +95,10 @@ public class Keystrokes extends Module {
         boolean d = mc.options.rightKey.isPressed();
         boolean space = mc.options.jumpKey.isPressed();
 
-        drawKey(ms, px + key + gap, cy, key, key, w, "W", f12, ac, ap, sc);
-        drawKey(ms, px, cy + key + gap, key, key, a, "A", f12, ac, ap, sc);
-        drawKey(ms, px + key + gap, cy + key + gap, key, key, s, "S", f12, ac, ap, sc);
-        drawKey(ms, px + (key + gap) * 2f, cy + key + gap, key, key, d, "D", f12, ac, ap, sc);
+        drawKey(ms, px + key + gap, cy, key, key, w, "W", f12, 12, ac, ap, sc);
+        drawKey(ms, px, cy + key + gap, key, key, a, "A", f12, 12, ac, ap, sc);
+        drawKey(ms, px + key + gap, cy + key + gap, key, key, s, "S", f12, 12, ac, ap, sc);
+        drawKey(ms, px + (key + gap) * 2f, cy + key + gap, key, key, d, "D", f12, 12, ac, ap, sc);
 
         // Пробел — широкая низкая клавиша
         float spY = cy + (key + gap) * 2f;
@@ -109,7 +107,7 @@ public class Keystrokes extends Module {
     }
 
     private void drawKey(MatrixStack ms, float x, float y, float w, float h, boolean pressed,
-                         String label, Font font, int ac, float ap, float sc) {
+                         String label, Font font, int fontSize, int ac, float ap, float sc) {
         AnimationUtils a = keyAnim(label, x, y);
         a.update(pressed ? 1f : 0f);
         float p = MathHelper.clamp(a.getValue(), 0f, 1f);
@@ -142,8 +140,7 @@ public class Keystrokes extends Module {
                 ? ColorUtils.rgba(245, 247, 252, (int) (250 * ap))
                 : ColorUtils.rgba(205, 211, 224, (int) (225 * ap));
         // капс-высота = size * 0.4023 (MSDF half-size рендер), центрируем по ней
-        int fsz = font == f12ref ? 12 : 9;
-        float ty = cy - fsz * 0.4023f / 2f + 1.5f - 0.0792f * fsz;
+        float ty = cy - fontSize * 0.4023f / 2f + 1.5f - 0.0792f * fontSize;
         font.draw(ms, label, x + (w - font.getWidth(label)) / 2f, ty, col);
     }
 
@@ -167,7 +164,6 @@ public class Keystrokes extends Module {
     }
 
     private final java.util.Map<String, AnimationUtils> keyAnims = new java.util.HashMap<>();
-    private Font f12ref;
 
     private AnimationUtils keyAnim(String label, float x, float y) {
         String key = label + "@" + (int) x + "," + (int) y;

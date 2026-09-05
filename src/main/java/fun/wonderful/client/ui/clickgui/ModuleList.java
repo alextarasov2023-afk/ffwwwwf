@@ -32,19 +32,22 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Список модулей выбранной категории внутри главной панели ClickGUI:
- * строки с тумблерами, биндами и раскрывающимися настройками.
- * Плавный скролл, hover-подсветка, ripple при переключении, каскад
- * появления строк при смене вкладки/поиске.
+ * Список модулей выбранной категории внутри главной панели ClickGUI.
+ * ДВА столбика: модули делятся пополам (левый — первая половина, правый —
+ * вторая), общий плавный скролл, каскад появления, hover-пилюли, ripple,
+ * настройки раскрываются под строкой в своей колонке.
  */
 class ModuleList {
 
-    // ===== Геометрия (задаётся панелью каждый кадр) =====
+    // ===== Геометрия =====
     private float x, y, w, h;
+    /** Текущая колонка (для рендера строк и кликов). */
+    private float colX, colW;
 
     static final int ROW_H = 26;
     private static final int ROW_GAP = 2;
     private static final int PAD = 12;
+    private static final float COL_GAP = 8f;
 
     // Высоты строк настроек — единый источник для рендера, кликов и расчёта высоты
     static final int SETTINGS_TOP_PAD = 12;
@@ -85,8 +88,6 @@ class ModuleList {
 
     static void text(MatrixStack ms, int size, String s, float px, float py, int color) {
         Font fo = f(size);
-        // py — верх заглавных букв (капс). Font.draw смещает y на -1.5 и рендерит в half-size:
-        // капс-верх = inputY - 1.5 + (baselineHeight - capHeight) * 0.5 * size = inputY - 1.5 + 0.0792*size
         if (fo != null && s != null && !s.isEmpty()) fo.draw(ms, s, px, py + 1.5f - 0.0792f * size, color);
     }
 
@@ -96,7 +97,6 @@ class ModuleList {
     }
 
     static float fh(int size) {
-        // Визуальная (капсная) высота букв: capHeight 0.8047em × half-size рендер
         return size * 0.4023f;
     }
 
@@ -147,22 +147,51 @@ class ModuleList {
         return null;
     }
 
+    // ===== Раскладка колонок =====
+
+    private List<Module> visibleModules(Module.ModuleCategory category) {
+        List<Module> out = new ArrayList<>();
+        for (Module m : modules(category)) {
+            if (matches(m)) out.add(m);
+        }
+        return out;
+    }
+
+    private boolean matches(Module m) {
+        if (ClickGuiScreen.showOnlyEnabled && !m.isEnable()) return false;
+        String q = ClickGuiScreen.filter.trim().toLowerCase(Locale.ROOT);
+        return q.isEmpty() || m.getName().toLowerCase(Locale.ROOT).contains(q);
+    }
+
+    private float columnWidth() {
+        return (w - COL_GAP) / 2f;
+    }
+
+    private float columnHeight(List<Module> list) {
+        float hh = 4;
+        for (Module m : list) hh += moduleFullHeight(m) + rowGapF(m);
+        return hh;
+    }
+
     // ===== Рендер =====
 
     void render(MatrixStack ms, int mouseX, int mouseY, float dt, float alpha,
                 Module.ModuleCategory category, int accent) {
         List<Module> mods = visibleModules(category);
 
-        // Смена вкладки или фильтра — каскадный пуск строк и сброс скролла
         String key = category.name() + "|" + ClickGuiScreen.filter + "|" + ClickGuiScreen.showOnlyEnabled;
         if (!key.equals(contentKey)) {
             contentKey = key;
             staggerAt = System.currentTimeMillis();
             scrollTarget = 0f;
         }
-        long sinceStagger = System.currentTimeMillis() - staggerAt;
 
-        float bodyFull = fullBodyHeight(mods);
+        float cw = columnWidth();
+        int mid = (mods.size() + 1) / 2;
+        List<Module> left = mods.subList(0, mid);
+        List<Module> right = mods.subList(Math.min(mid, mods.size()), mods.size());
+
+        float bodyFull = Math.max(4f, Math.max(columnHeight(left), columnHeight(right)));
         float maxScroll = Math.max(0f, bodyFull - h);
         scrollTarget = MathHelper.clamp(scrollTarget, 0f, maxScroll);
         float sk = 1f - (float) Math.exp(-dt * 16.0);
@@ -173,18 +202,9 @@ class ModuleList {
         ScissorUtils.setFromComponentCoordinates((int) x, (int) y - 1, (int) w,
                 (int) Math.ceil(h) + 2);
 
-        float cy = y + 4 - scrollCurrent;
-        for (int i = 0; i < mods.size(); i++) {
-            Module m = mods.get(i);
-
-            // Каскад появления: каждая строка чуть позже предыдущей, максимум ~0.4 с
-            float rowT = MathHelper.clamp((sinceStagger - i * 14L) / 110f, 0f, 1f);
-            float rowA = alpha * rowT;
-            float rowOff = (1f - rowT) * 7f;
-            if (rowA > 0.01f) {
-                renderModule(ms, m, cy + rowOff, mouseX, mouseY, accent, alpha, dt, rowA);
-            }
-            cy += moduleFullHeight(m) + rowGapF(m);
+        renderColumn(ms, left, x, cw, 0, mouseX, mouseY, accent, alpha, dt);
+        if (!right.isEmpty()) {
+            renderColumn(ms, right, x + cw + COL_GAP, cw, mid, mouseX, mouseY, accent, alpha, dt);
         }
 
         ScissorUtils.pop();
@@ -206,19 +226,23 @@ class ModuleList {
         }
     }
 
-    /** Строки, прошедшие поиск. */
-    private List<Module> visibleModules(Module.ModuleCategory category) {
-        List<Module> out = new ArrayList<>();
-        for (Module m : modules(category)) {
-            if (matches(m)) out.add(m);
-        }
-        return out;
-    }
+    private void renderColumn(MatrixStack ms, List<Module> list, float cx, float cw, int baseIdx,
+                              int mouseX, int mouseY, int ac, float alpha, float dt) {
+        this.colX = cx;
+        this.colW = cw;
+        long sinceStagger = System.currentTimeMillis() - staggerAt;
 
-    private boolean matches(Module m) {
-        if (ClickGuiScreen.showOnlyEnabled && !m.isEnable()) return false;
-        String q = ClickGuiScreen.filter.trim().toLowerCase(Locale.ROOT);
-        return q.isEmpty() || m.getName().toLowerCase(Locale.ROOT).contains(q);
+        float cy = y + 4 - scrollCurrent;
+        for (int i = 0; i < list.size(); i++) {
+            Module m = list.get(i);
+            float rowT = MathHelper.clamp((sinceStagger - (baseIdx + i) * 14L) / 110f, 0f, 1f);
+            float rowA = alpha * rowT;
+            float rowOff = (1f - rowT) * 7f;
+            if (rowA > 0.01f) {
+                renderModule(ms, m, cy + rowOff, mouseX, mouseY, ac, alpha, dt, rowA, i);
+            }
+            cy += moduleFullHeight(m) + rowGapF(m);
+        }
     }
 
     private AnimationUtils anim(Object key, float speed, Easing ease) {
@@ -233,7 +257,6 @@ class ModuleList {
     }
 
     private int pillLines(ModeSetting mode) {
-        // Тот же доступный ширин, что и при рендере/кликах — иначе разойдётся число строк
         return countLines(pillLayout(mode, insetW() - 12f));
     }
 
@@ -261,11 +284,11 @@ class ModuleList {
     }
 
     private float insetX() {
-        return x + PAD + 8f;
+        return colX + PAD + 8f;
     }
 
     private float insetW() {
-        return w - (PAD + 8f) * 2f;
+        return colW - (PAD + 8f) * 2f;
     }
 
     private int settingsHeight(Module m) {
@@ -292,16 +315,10 @@ class ModuleList {
         return ROW_GAP;
     }
 
-    private float fullBodyHeight(List<Module> mods) {
-        float hh = 4;
-        for (Module m : mods) hh += moduleFullHeight(m) + rowGapF(m);
-        return hh;
-    }
-
     // ===== Строка модуля =====
 
     private void renderModule(MatrixStack ms, Module m, float ry, int mouseX, int mouseY,
-                              int ac, float winP, float dt, float vp) {
+                              int ac, float winP, float dt, float vp, int idxInCol) {
         AnimationUtils tgA = anim(m.toString() + "_tg", 9f, Easings.BACK_OUT);
         tgA.update(m.isEnable() ? 1f : 0f);
         float enP = MathHelper.clamp(tgA.getValue(), 0f, 1.15f);
@@ -311,9 +328,8 @@ class ModuleList {
         exA.update(expanded.contains(m) ? 1f : 0f);
         float exP = MathHelper.clamp(exA.getValue(), 0f, 1f);
 
-        // Hover: мягкая пилюля + светлеющее имя
         boolean listMoving = Math.abs(scrollTarget - scrollCurrent) > 0.2f;
-        boolean hov = !listMoving && HoveringUtils.isHovered(mouseX, mouseY, x, ry, w, ROW_H);
+        boolean hov = !listMoving && HoveringUtils.isHovered(mouseX, mouseY, colX, ry, colW, ROW_H);
         if (hov) {
             hoverModule = m;
             hoverSince = System.currentTimeMillis();
@@ -324,8 +340,14 @@ class ModuleList {
         hovA.update(hov ? 1f : 0f);
         float hp = MathHelper.clamp(hovA.getValue(), 0f, 1f);
 
+        // Тонкая полоска-зебра: каждый второй ряд чуть притушён для читаемости
+        if (idxInCol % 2 == 1 && hp <= 0.02f) {
+            RenderUtils.drawRoundedRect(ms, colX + 4f, ry + 0.5f, colW - 8f, ROW_H - 1f, 6f,
+                    ColorUtils.rgba(255, 255, 255, (int) (5 * vp)));
+        }
+
         if (hp > 0.02f) {
-            RenderUtils.drawRoundedRect(ms, x + 6f, ry + 0.5f, w - 12f, ROW_H - 1f, 6f,
+            RenderUtils.drawRoundedRect(ms, colX + 4f, ry + 0.5f, colW - 8f, ROW_H - 1f, 6f,
                     ColorUtils.rgba(255, 255, 255, (int) (14 * hp * vp)));
         }
 
@@ -333,26 +355,30 @@ class ModuleList {
         float enBar = Math.min(1f, enP);
         if (enBar > 0.03f) {
             float barH = (ROW_H - 10f) * enBar;
-            RenderUtils.drawRoundedRect(ms, x + 8.2f, ry + (ROW_H - barH) / 2f, 1.8f, barH, 0.9f,
+            RenderUtils.drawRoundedRect(ms, colX + 6.2f, ry + (ROW_H - barH) / 2f, 1.8f, barH, 0.9f,
                     ColorUtils.applyAlpha(ac, 0.9f * enBar * vp));
         }
 
-        // Имя по центру строки: светлеет при включении и наведении
-        float nameW = tw(13, m.getName());
-        float nameX = x + (w - nameW) / 2f;
+        // Имя по центру ПРОМЕЖУТКА между чипом бинда и тумблером — не залезает ни на что
+        float leftReserve = 44f;
+        float rightReserve = PAD + 4f + ToggleSwitch.W + 16f;
+        float nameAvail = colW - leftReserve - rightReserve;
+        String name = fitText(m.getName(), 13, nameAvail);
+        float nameW = tw(13, name);
+        float nameX = colX + leftReserve + (nameAvail - nameW) / 2f;
         int nameBase = ColorUtils.rgba(205, 211, 224, (int) (225 * vp));
         int nameOn = ColorUtils.interpolateColor(nameBase,
                 ColorUtils.rgba(243, 246, 252, (int) (245 * vp)), Math.min(1f, enBar * 0.8f));
         int nameCol = ColorUtils.interpolateColor(nameOn,
                 ColorUtils.rgba(235, 240, 248, (int) (248 * vp)), hp);
-        text(ms, 13, m.getName(), nameX, ry + ROW_H / 2f - fh(13) / 2f, nameCol);
+        text(ms, 13, name, nameX, ry + ROW_H / 2f - fh(13) / 2f, nameCol);
 
         // Стрелка-индикатор наличия настроек (ПКМ)
         if (hasSettings(m)) {
             AnimationUtils rotA = anim(m.toString() + "_arr", 10f, Easings.CUBIC_OUT);
             rotA.update(expanded.contains(m) ? 1f : 0f);
             float rp = MathHelper.clamp(rotA.getValue(), 0f, 1f);
-            float ax = x + w - PAD - 4f - ToggleSwitch.W - 14f;
+            float ax = colX + colW - PAD - 4f - ToggleSwitch.W - 14f;
             float ay = ry + ROW_H / 2f;
             ms.push();
             ms.translate(ax, ay, 0f);
@@ -362,14 +388,14 @@ class ModuleList {
             ms.pop();
         }
 
-        // Бинд-кнопка: чип с клавишей; клик — перебинд
+        // Бинд-чип слева: клик — перебинд
         boolean isListening = ClickGuiScreen.listeningModule == m;
-        float swX = x + w - PAD - 4f - ToggleSwitch.W;
+        float swX = colX + colW - PAD - 4f - ToggleSwitch.W;
         float swY = ry + ROW_H / 2f - ToggleSwitch.H / 2f;
         if (isListening) {
             float lw = tw(10, "[...]") + 12;
             float lh = 14;
-            float lx = x + 10f;
+            float lx = colX + 10f;
             float ly = ry + ROW_H / 2f - lh / 2f;
             RenderUtils.drawRoundedRect(ms, lx, ly, lw, lh, lh / 2f,
                     ColorUtils.applyAlpha(ac, 0.3f * vp));
@@ -379,7 +405,7 @@ class ModuleList {
             String kn = KeyBoardUtils.getBindName(m.getKey());
             float kw = tw(10, kn) + 12;
             float kh = 14;
-            float kx = x + 10f;
+            float kx = colX + 10f;
             float ky = ry + ROW_H / 2f - kh / 2f;
             RenderUtils.drawRoundedRect(ms, kx, ky, kw, kh, kh / 2f,
                     ColorUtils.rgba(255, 255, 255, (int) (20 * vp)));
@@ -507,8 +533,9 @@ class ModuleList {
         text(ms, 11, kn, x0 + w0 - tw(11, kn) - 2f, y0 + h0 / 2f - fh(11) / 2f, kCol);
     }
 
-    /** Обрезает текст с многоточием, чтобы он не залезал под чекбокс. */
+    /** Обрезает текст с многоточием под заданную ширину. */
     private String fitText(String s, int size, float maxW) {
+        if (maxW <= 8f) return "...";
         if (tw(size, s) <= maxW) return s;
         String cut = s;
         while (cut.length() > 1 && tw(size, cut + "...") > maxW) {
@@ -569,7 +596,6 @@ class ModuleList {
         float frac = (shown - num.getMin()) / Math.max(0.0001f, num.getMax() - num.getMin());
         float fw = w0 * MathHelper.clamp(frac, 0f, 1f);
         if (fw > 0.5f) {
-            // Градиентная заливка: темнее у основания, светлее у ползунка
             int fillL = ColorUtils.applyAlpha(ac, 0.60f * a * winP);
             int fillR = ColorUtils.applyAlpha(ColorUtils.interpolateColor(ac, 0xFFFFFFFF, 0.22f), 0.95f * a * winP);
             RenderUtils.drawGradientRect(ms, x0, trackY, fw, trackH, trackH / 2f, fillL, fillR, true);
@@ -735,29 +761,40 @@ class ModuleList {
     // ===== Клики =====
 
     void handleClick(int button, int mx, int my, Module.ModuleCategory category) {
-        float exGate = 0.85f;
+        List<Module> mods = visibleModules(category);
+        if (mods.isEmpty()) return;
 
+        float cw = columnWidth();
+        int mid = (mods.size() + 1) / 2;
+        boolean rightCol = mx > x + w / 2f;
+        List<Module> col = rightCol ? mods.subList(Math.min(mid, mods.size()), mods.size()) : mods.subList(0, mid);
+        if (col.isEmpty()) return;
+
+        this.colX = rightCol ? x + cw + COL_GAP : x;
+        this.colW = cw;
+
+        float exGate = 0.85f;
         float cy = y + 4 - scrollCurrent;
-        for (Module m : visibleModules(category)) {
+        for (Module m : col) {
             float rowH = moduleFullHeight(m);
 
-            if (my >= cy && my <= cy + ROW_H && mx >= x && mx <= x + w) {
-                float swX = x + w - PAD - 4f - ToggleSwitch.W;
+            if (my >= cy && my <= cy + ROW_H && mx >= colX && mx <= colX + colW) {
+                float swX = colX + colW - PAD - 4f - ToggleSwitch.W;
                 float swY = cy + ROW_H / 2f - ToggleSwitch.H / 2f;
 
                 if (button == 0) {
-                    // Клик по чипу бинда — прослушка клавиши, иначе — переключение
                     if (m.getKey() != -1 && ClickGuiScreen.listeningModule != m) {
                         String kn = KeyBoardUtils.getBindName(m.getKey());
                         float kw = tw(10, kn) + 12;
-                        float kx = x + 10f;
+                        float kx = colX + 10f;
                         float ky = cy + ROW_H / 2f - 7f;
                         if (HoveringUtils.isHovered(mx, my, kx, ky, kw, 14f)) {
                             ClickGuiScreen.listeningModule = m;
                             return;
                         }
                     }
-                    if (ToggleSwitch.hit(mx, my, swX, swY) || HoveringUtils.isHovered(mx, my, x + 6f, cy, w - 12f, ROW_H)) {
+                    if (ToggleSwitch.hit(mx, my, swX, swY)
+                            || HoveringUtils.isHovered(mx, my, colX + 4f, cy, colW - 8f, ROW_H)) {
                         m.toggle();
                         lastToggleAt.put(m, System.currentTimeMillis());
                     }
