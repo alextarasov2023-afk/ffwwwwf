@@ -22,7 +22,6 @@ import fun.wonderful.client.modules.impl.render.FreeLook;
 import fun.wonderful.client.modules.settings.implement.BooleanSetting;
 import fun.wonderful.client.modules.settings.implement.FloatSetting;
 import fun.wonderful.client.modules.settings.implement.ModeSetting;
-import fun.wonderful.api.storages.implement.HitFxStorage;
 import fun.wonderful.api.storages.implement.RotationStorage;
 import fun.wonderful.api.storages.implement.FreeLookStorage;
 import fun.wonderful.api.utils.input.MovingUtil;
@@ -43,7 +42,7 @@ public class KillAura extends Module {
 
     public static KillAura INSTANCE = new KillAura();
 
-    public final FloatSetting range = new FloatSetting("Дистанция", 3.5f, 1.0f, 6.0f, 0.1f);
+    public final FloatSetting range = new FloatSetting("Дистанция", 3.0f, 1.0f, 3.4f, 0.05f);
     public final FloatSetting fov = new FloatSetting("FOV", 180f, 30f, 360f, 5f);
     public final ModeSetting critMode = new ModeSetting("Крит", "Smart Crit", "Smart Crit", "Only Crit", "Off");
     public final BooleanSetting sprintReset = new BooleanSetting("Сброс спринта", true);
@@ -227,7 +226,6 @@ public class KillAura extends Module {
     private void attack(Entity target) {
         mc.interactionManager.attackEntity(mc.player, target);
         mc.player.swingHand(Hand.MAIN_HAND);
-        HitFxStorage.onAttack();
         lastAttackTick = currentTick;
         returnAim();
     }
@@ -280,6 +278,15 @@ public class KillAura extends Module {
         if (!canSeeTarget()) return false;
         // Цель могла отойти за время наводки — перепроверяем дистанцию
         if (mc.player.distanceTo(target) > range.get() + 0.3f) return false;
+
+        // Reach-лимит: сервер считает дистанцию от глаз до ближайшей точки хитбокса.
+        // Ваниль = 3.0; бьём только если реально достаём (с запасом) — иначе флаг античита.
+        Vec3d eye = mc.player.getEyePos();
+        Box box = target.getBoundingBox();
+        double dx = Math.max(Math.max(box.minX - eye.x, 0.0), eye.x - box.maxX);
+        double dy = Math.max(Math.max(box.minY - eye.y, 0.0), eye.y - box.maxY);
+        double dz = Math.max(Math.max(box.minZ - eye.z, 0.0), eye.z - box.maxZ);
+        if (Math.sqrt(dx * dx + dy * dy + dz * dz) > 2.97) return false;
         boolean isMace = mc.player.getMainHandStack().getItem() instanceof MaceItem;
         if (!canCritHit(isMace)) return false;
 
@@ -448,8 +455,8 @@ public class KillAura extends Module {
             if (ignoreFriends.isState() && isFriend(living)) return false;
         }
         if (onlyPlayers.isState() && !(e instanceof PlayerEntity)) return false;
-        if (e.isInvisible()) return false;
-        if (mc.player.distanceTo(e) > range.get()) return false;
+        // Невидимых бьём: фильтр по isInvisible убран (прозрачные зелья — валидные цели)
+        if (mc.player.distanceTo(e) > range.get() + 1.0f) return false;
         return isInFov(e);
     }
 

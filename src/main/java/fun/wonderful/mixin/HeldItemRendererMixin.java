@@ -36,25 +36,9 @@ public abstract class HeldItemRendererMixin {
         if (tweaks != null && tweaks.isEnable() && tweaks.swapHands.isState()) {
             renderHand = hand == Hand.MAIN_HAND ? Hand.OFF_HAND : Hand.MAIN_HAND;
         }
-        ((HeldItemRendererInvoker) instance).whylol$callRenderFirstPersonItem(player, tickDelta, pitch, renderHand, swingProgress, stack, equipProgress, matrices, vertexConsumers, wonderful$glowLight(light));
+        ((HeldItemRendererInvoker) instance).whylol$callRenderFirstPersonItem(player, tickDelta, pitch, renderHand, swingProgress, stack, equipProgress, matrices, vertexConsumers, light);
     }
 
-    /** GlowHands: полный свет для руки с предметом (не темнеет в пещерах). */
-    private static int wonderful$glowLight(int light) {
-        return fun.wonderful.client.modules.impl.render.GlowHands.isGlow() ? Math.max(light, 0xF000F0) : light;
-    }
-
-    @ModifyArg(
-            method = "renderFirstPersonItem",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/render/item/HeldItemRenderer;renderArmHoldingItem(Lnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;IFFLnet/minecraft/util/Arm;)V"
-            ),
-            index = 2
-    )
-    private int wonderful$glowEmptyHandLight(int light) {
-        return wonderful$glowLight(light);
-    }
 
     @ModifyArg(
             method = "renderFirstPersonItem",

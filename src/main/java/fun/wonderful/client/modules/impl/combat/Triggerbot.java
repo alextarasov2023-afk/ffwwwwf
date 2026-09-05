@@ -19,14 +19,13 @@ import fun.wonderful.client.modules.Module;
 import fun.wonderful.client.modules.settings.implement.BooleanSetting;
 import fun.wonderful.client.modules.settings.implement.FloatSetting;
 import fun.wonderful.client.modules.settings.implement.ModeSetting;
-import fun.wonderful.api.storages.implement.HitFxStorage;
 import fun.wonderful.api.storages.implement.RotationStorage;
 
 public class Triggerbot extends Module {
 
     public static Triggerbot INSTANCE = new Triggerbot();
 
-    public final FloatSetting reach = new FloatSetting("Дистанция", 3.5f, 1.0f, 6.0f, 0.1f);
+    public final FloatSetting reach = new FloatSetting("Дистанция", 3.0f, 1.0f, 3.4f, 0.05f);
     public final ModeSetting critMode = new ModeSetting("Крит", "Smart Crit", "Smart Crit", "Only Crit", "Off");
     public final BooleanSetting sprintReset = new BooleanSetting("Сброс спринта", true);
     public final BooleanSetting noEatAttack = new BooleanSetting("Не атаковать когда ешь", true);
@@ -137,10 +136,15 @@ public class Triggerbot extends Module {
             if (!throughWalls.isState() && !mc.player.canSee(entity)) continue;
 
             if (box.raycast(eyePos, endPos).isPresent()) {
-                double d = mc.player.distanceTo(entity);
-                if (d < closestDist) {
+                // Reach-лимит: реальная дистанция от глаз до ближайшей точки хитбокса
+                // (ваниль 3.0, с запасом) — дальше не бьём, иначе флаг античита
+                double dx = Math.max(Math.max(box.minX - eyePos.x, 0.0), eyePos.x - box.maxX);
+                double dy = Math.max(Math.max(box.minY - eyePos.y, 0.0), eyePos.y - box.maxY);
+                double dz = Math.max(Math.max(box.minZ - eyePos.z, 0.0), eyePos.z - box.maxZ);
+                double boxDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                if (boxDist <= 2.97 && boxDist < closestDist) {
                     closest = entity;
-                    closestDist = d;
+                    closestDist = boxDist;
                 }
             }
         }
@@ -205,7 +209,6 @@ public class Triggerbot extends Module {
     private void attack(Entity target) {
         mc.interactionManager.attackEntity(mc.player, target);
         mc.player.swingHand(Hand.MAIN_HAND);
-        HitFxStorage.onAttack();
         lastAttackTick = currentTick;
         lastTarget = target;
         landedTicks = 0;

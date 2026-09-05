@@ -167,9 +167,9 @@ class ModuleList {
         return (w - COL_GAP) / 2f;
     }
 
-    private float columnHeight(List<Module> list) {
+    private float columnHeight(List<Module> list, float cw) {
         float hh = 4;
-        for (Module m : list) hh += moduleFullHeight(m) + rowGapF(m);
+        for (Module m : list) hh += moduleFullHeight(m, cw) + rowGapF(m);
         return hh;
     }
 
@@ -191,7 +191,7 @@ class ModuleList {
         List<Module> left = mods.subList(0, mid);
         List<Module> right = mods.subList(Math.min(mid, mods.size()), mods.size());
 
-        float bodyFull = Math.max(4f, Math.max(columnHeight(left), columnHeight(right)));
+        float bodyFull = Math.max(4f, Math.max(columnHeight(left, cw), columnHeight(right, cw)));
         float maxScroll = Math.max(0f, bodyFull - h);
         scrollTarget = MathHelper.clamp(scrollTarget, 0f, maxScroll);
         float sk = 1f - (float) Math.exp(-dt * 16.0);
@@ -241,7 +241,7 @@ class ModuleList {
             if (rowA > 0.01f) {
                 renderModule(ms, m, cy + rowOff, mouseX, mouseY, ac, alpha, dt, rowA, i);
             }
-            cy += moduleFullHeight(m) + rowGapF(m);
+            cy += moduleFullHeight(m, cw) + rowGapF(m);
         }
     }
 
@@ -256,8 +256,13 @@ class ModuleList {
         return false;
     }
 
-    private int pillLines(ModeSetting mode) {
-        return countLines(pillLayout(mode, insetW() - 12f));
+    private int pillLines(ModeSetting mode, float cw) {
+        return countLines(pillLayout(mode, insetWFor(cw) - 12f));
+    }
+
+    /** Ширина блока настроек для колонки шириной cw. */
+    private static float insetWFor(float cw) {
+        return cw - (PAD + 8f) * 2f;
     }
 
     private int countLines(List<float[]> layout) {
@@ -291,7 +296,7 @@ class ModuleList {
         return colW - (PAD + 8f) * 2f;
     }
 
-    private int settingsHeight(Module m) {
+    private int settingsHeight(Module m, float cw) {
         int hh = SETTINGS_TOP_PAD;
         for (Setting<?> s : m.getSettings()) {
             if (s == null || !s.isVisible()) continue;
@@ -299,15 +304,15 @@ class ModuleList {
             else if (s instanceof FloatSetting) hh += SLIDER_H;
             else if (s instanceof TextSetting) hh += TEXT_H;
             else if (s instanceof BindSetting) hh += BIND_H;
-            else if (s instanceof ModeSetting mode) hh += MODE_LABEL_H + pillLines(mode) * MODE_LINE_H + MODE_PAD_B;
+            else if (s instanceof ModeSetting mode) hh += MODE_LABEL_H + pillLines(mode, cw) * MODE_LINE_H + MODE_PAD_B;
             else if (s instanceof ListSetting list) hh += LIST_HEAD_H + list.getSettings().size() * LIST_CHILD_H;
         }
         return hh;
     }
 
-    private float moduleFullHeight(Module m) {
+    private float moduleFullHeight(Module m, float cw) {
         float ex = MathHelper.clamp(anim(m.toString() + "_ex", 10f, Easings.CUBIC_OUT).getValue(), 0f, 1f);
-        int sh = hasSettings(m) ? settingsHeight(m) : 0;
+        int sh = hasSettings(m) ? settingsHeight(m, cw) : 0;
         return ROW_H + sh * ex;
     }
 
@@ -446,7 +451,7 @@ class ModuleList {
 
     private void renderSettings(MatrixStack ms, Module m, float sy, float exP,
                                 int mouseX, int mouseY, int ac, float winP, float dt) {
-        float sh = settingsHeight(m) * exP;
+        float sh = settingsHeight(m, colW) * exP;
         RenderUtils.drawRoundedRect(ms, insetX(), sy, insetW(), sh, 6f,
                 ColorUtils.rgba(2, 5, 12, (int) (72 * exP)));
 
@@ -776,7 +781,7 @@ class ModuleList {
         float exGate = 0.85f;
         float cy = y + 4 - scrollCurrent;
         for (Module m : col) {
-            float rowH = moduleFullHeight(m);
+            float rowH = moduleFullHeight(m, cw);
 
             if (my >= cy && my <= cy + ROW_H && mx >= colX && mx <= colX + colW) {
                 float swX = colX + colW - PAD - 4f - ToggleSwitch.W;
@@ -836,8 +841,8 @@ class ModuleList {
                 }
                 cy += BOOL_H;
             } else if (s instanceof FloatSetting num) {
-                float trackY = cy + SLIDER_H - 10;
-                if (button == 0 && HoveringUtils.isHovered(mx, my, ix, trackY - 6, iw, 16)) {
+                // Клик в любом месте строки слайдера начинает перетаскивание
+                if (button == 0 && HoveringUtils.isHovered(mx, my, ix, cy, iw, SLIDER_H)) {
                     ClickGuiScreen.draggingSlider = num;
                     ClickGuiScreen.dragTrackX = ix;
                     ClickGuiScreen.dragTrackW = iw;
@@ -846,8 +851,7 @@ class ModuleList {
                 }
                 cy += SLIDER_H;
             } else if (s instanceof TextSetting ts) {
-                float by = cy + 11;
-                if (button == 0 && HoveringUtils.isHovered(mx, my, ix, by, iw, 15)) {
+                if (button == 0 && HoveringUtils.isHovered(mx, my, ix, cy, iw, TEXT_H)) {
                     ClickGuiScreen.activeTextSetting = ts;
                     return true;
                 }

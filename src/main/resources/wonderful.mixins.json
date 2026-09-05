@@ -21,8 +21,7 @@
   "IMinecraftClientAccessor",
   "ILivingEntityAccessor",
   "HeldItemRendererMixin",
-  "HeldItemRendererInvoker",
-  "ClientWorldMixin"
+  "HeldItemRendererInvoker"
  ],
  "injectors": {
   "defaultRequire": 1
