@@ -42,6 +42,36 @@ public class ThemePanel {
     private static float panelOpen = 1f;
     private static final AnimationUtils openAnim = new AnimationUtils(1f, 8f, Easings.BACK_OUT);
 
+    /** Открыта ли панель тем (кнопка-палитра в шапке ClickGUI). */
+    private static boolean open = false;
+    private static final AnimationUtils openFade = new AnimationUtils(0f, 10f, Easings.CUBIC_OUT);
+    /** Якорь позиции — задаётся ClickGuiScreen каждый кадр. */
+    private static float anchorX = 6f, anchorY = 44f;
+
+    public static boolean isOpen() {
+        return open;
+    }
+
+    public static void setOpen(boolean value) {
+        open = value;
+        if (value) {
+            entranceAnim.setValue(0f);
+        }
+    }
+
+    public static boolean isShown() {
+        return open || MathHelper.clamp(openFade.getValue(), 0f, 1f) > 0.02f;
+    }
+
+    public static void updateOpen(float dt) {
+        openFade.update(open ? 1f : 0f);
+    }
+
+    public static void anchor(float x, float y) {
+        anchorX = x;
+        anchorY = y;
+    }
+
     /** Пулы анимаций: появление панели, переключатель градиента, пипетка, hover-состояния. */
     private static final Map<String, AnimationUtils> hoverA = new HashMap<>();
     private static final AnimationUtils entranceAnim = new AnimationUtils(0f, 4f, Easings.BACK_OUT);
@@ -85,25 +115,13 @@ public class ThemePanel {
 
     public static void init() {
         hexBuffer = String.format("%02X%02X%02X", r1, g1, b1);
-        entranceAnim.setValue(0f);
         gradAnim.setValue(gradient ? 1f : 0f);
-        popAnim.setValue(0f);
-        lastPaletteTarget = -1;
-        paletteTarget = -1;
-        palDragging = false;
         dragChannel = -1;
-        scrollTarget = 0f;
-        scrollCurrent = 0f;
     }
 
     /** Общий пул hover-анимаций (ключ — стабильная строка элемента). */
     private static AnimationUtils anim(String key, float speed, Easing easing) {
         return hoverA.computeIfAbsent(key, k -> new AnimationUtils(0f, speed, easing));
-    }
-
-    public static void resetOpen() {
-        panelOpen = 1f;
-        openAnim.setValue(1f);
     }
 
     public static int rgb(int r, int g, int b, int a) {
@@ -334,8 +352,8 @@ public class ThemePanel {
         gradAnim.update(gradient ? 1f : 0f);
         popAnim.update(paletteTarget >= 0 ? 1f : 0f);
 
-        panelX = 6f;
-        panelY = 44f - (1f - epRaw) * 26f;
+        panelX = anchorX;
+        panelY = anchorY - (1f - epRaw) * 14f;
 
         float contentH = contentHeight();
         float availH = screenH - panelY - 12f;
@@ -343,7 +361,8 @@ public class ThemePanel {
         panelH = Math.max(120f, Math.min(availH, neededH));
 
         openAnim.setValue(panelOpen);
-        float a = MathHelper.clamp(openAnim.getValue(), 0f, 1f) * alpha * eA;
+        float ov = MathHelper.clamp(openFade.getValue(), 0f, 1f);
+        float a = MathHelper.clamp(openAnim.getValue(), 0f, 1f) * alpha * eA * ov;
         if (a < 0.02f) return;
 
         // Плавный скролл
@@ -411,7 +430,7 @@ public class ThemePanel {
                 hcy - icoSize / 2f,
                 icoSize, icoCol);
 
-        DropdownWindow.text(ms, 15, "theme", panelX + 33, hcy - DropdownWindow.fh(15) / 2f,
+        ModuleList.text(ms, 15, "theme", panelX + 33, hcy - ModuleList.fh(15) / 2f,
                 ColorUtils.rgba(242, 244, 250, (int) (250 * a)));
 
         int hdrAccent = ColorUtils.applyAlpha(accent(panelY + HEADER_H), (int) (110 * a));
@@ -420,7 +439,7 @@ public class ThemePanel {
 /** Строка-переключатель «Градиент» */
     private static void drawGradientRow(MatrixStack ms, float a, int mouseX, int mouseY) {
         float y = gradTop();
-        DropdownWindow.text(ms, 11, "Градиент", panelX + PAD_X, y + 11f - DropdownWindow.fh(11) / 2f,
+        ModuleList.text(ms, 11, "Градиент", panelX + PAD_X, y + 11f - ModuleList.fh(11) / 2f,
                 ColorUtils.rgba(228, 232, 240, (int) (232 * a)));
 
         float swX = panelX + W - PAD_X - ToggleSwitch.W;
@@ -453,8 +472,8 @@ public class ThemePanel {
                 ColorUtils.rgba(0, 0, 0, (int) (40 * a)));
 
         String hex = String.format("%02X%02X%02X", r1, g1, b1) + " -> " + String.format("%02X%02X%02X", r2, g2, b2);
-        DropdownWindow.text(ms, 10, hex, x + w - DropdownWindow.tw(10, hex),
-                y + h / 2f - DropdownWindow.fh(10) / 2f,
+        ModuleList.text(ms, 10, hex, x + w - ModuleList.tw(10, hex),
+                y + h / 2f - ModuleList.fh(10) / 2f,
                 ColorUtils.rgba(255, 255, 255, (int) (235 * a)));
     }
 
@@ -466,11 +485,11 @@ public class ThemePanel {
         float[] sw = colorSwatchRect(isFirst);
         RenderUtils.drawRoundedRect(ms, sw[0], sw[1], sw[2], sw[3], 3f,
                 ColorUtils.applyAlpha(ColorUtils.rgba(cr, cg, cb, 255), (int) (245 * a)));
-        DropdownWindow.text(ms, 11, title, panelX + PAD_X + 18, ly - DropdownWindow.fh(11) / 2f,
+        ModuleList.text(ms, 11, title, panelX + PAD_X + 18, ly - ModuleList.fh(11) / 2f,
                 ColorUtils.rgba(220, 225, 235, (int) (220 * a)));
         String hex = String.format("%02X%02X%02X", cr, cg, cb);
-        DropdownWindow.text(ms, 10, hex, panelX + PAD_X + CONTENT_W - DropdownWindow.tw(10, hex),
-                ly - DropdownWindow.fh(10) / 2f, ColorUtils.applyAlpha(ColorUtils.rgba(cr, cg, cb, 255), 0.9f * a));
+        ModuleList.text(ms, 10, hex, panelX + PAD_X + CONTENT_W - ModuleList.tw(10, hex),
+                ly - ModuleList.fh(10) / 2f, ColorUtils.applyAlpha(ColorUtils.rgba(cr, cg, cb, 255), 0.9f * a));
 
                 String[] names = {"R", "G", "B"};
         int[] vals = {cr, cg, cb};
@@ -491,11 +510,11 @@ public class ThemePanel {
         if (a < 0.01f) return;
         float effA = enabled ? a : a * 0.55f;
 
-        DropdownWindow.text(ms, 11, label, x, y, ColorUtils.rgba(222, 226, 236, (int) (225 * effA)));
+        ModuleList.text(ms, 11, label, x, y, ColorUtils.rgba(222, 226, 236, (int) (225 * effA)));
         String valTxt = max >= 3f ? String.valueOf(Math.round(value))
                 : String.format(Locale.US, "%.2f", value);
-        DropdownWindow.text(ms, 10, valTxt, x + w - DropdownWindow.tw(10, valTxt),
-                y + DropdownWindow.fh(11) - DropdownWindow.fh(10), ColorUtils.applyAlpha(chanCol, 0.92f * effA));
+        ModuleList.text(ms, 10, valTxt, x + w - ModuleList.tw(10, valTxt),
+                y + ModuleList.fh(11) - ModuleList.fh(10), ColorUtils.applyAlpha(chanCol, 0.92f * effA));
 
         float trackY = y + 14f;
         float trackH = 3f;
@@ -521,7 +540,7 @@ public class ThemePanel {
     /** Сетка пресетов палитры */
     private static void drawPresets(MatrixStack ms, float a, int mouseX, int mouseY) {
         float labelTop = presetLabelTop();
-        DropdownWindow.text(ms, 11, "Пресеты", panelX + PAD_X, labelTop,
+        ModuleList.text(ms, 11, "Пресеты", panelX + PAD_X, labelTop,
                 ColorUtils.rgba(220, 225, 235, (int) (215 * a)));
 
         float gridTop = presetGridTop();

@@ -15,7 +15,6 @@ import fun.wonderful.api.utils.input.KeyBoardUtils;
 import fun.wonderful.api.utils.math.HoveringUtils;
 import fun.wonderful.api.utils.render.RenderUtils;
 import fun.wonderful.api.utils.render.fonts.msdf.Font;
-import fun.wonderful.api.utils.render.fonts.msdf.Fonts;
 import fun.wonderful.client.modules.Module;
 import fun.wonderful.client.modules.settings.implement.BindSetting;
 import fun.wonderful.client.modules.settings.implement.FloatSetting;
@@ -24,39 +23,61 @@ import fun.wonderful.client.modules.settings.implement.TextSetting;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * ClickGUI — одна панель по центру: шапка с поиском и кнопкой тем,
+ * вкладки категорий сверху, список модулей с настройками, подвал с подсказкой.
+ * Стиль: тёмная панель + один акцентный цвет, аккуратные плавные анимации.
+ */
 public class ClickGuiScreen extends Screen {
 
+    // ===== Общее состояние ввода (используется ModuleList/ThemePanel) =====
     static BindSetting listeningBind;
     static Module listeningModule;
     static TextSetting activeTextSetting;
     static FloatSetting draggingSlider;
     static float dragTrackX, dragTrackW;
     static String filter = "";
-    static boolean filterActive = false;
 
-    private float filterBoxX, filterBoxY, filterBoxW, filterBoxH;
-
-    static final int WIN_W = DropdownWindow.WIN_W;
     static int screenHeightCached;
 
-    private final List<DropdownWindow> windows = new ArrayList<>();
-    private boolean positionsInitialized = false;
+    // ===== Геометрия панели =====
+    private static final float HEADER_H = 38f;
+    private static final float TABS_H = 32f;
+    private static final float FOOTER_H = 24f;
+    private static final float MIN_W = 300f;
+    private static final float MIN_H = 220f;
+
+    private final List<Module.ModuleCategory> categories = new ArrayList<>();
+    private final ModuleList list = new ModuleList();
+
+    private Module.ModuleCategory activeCategory;
+
     private boolean closing = false;
-    private long openedAt;
     private long lastFrameNanos;
 
-    private Module tooltipModule;
+    // Анимации
+    private final AnimationUtils openAnim = new AnimationUtils(0f, 9f, Easings.CUBIC_OUT);
     private final AnimationUtils tooltipAnim = new AnimationUtils(0f, 12f, Easings.CUBIC_OUT);
-    private final AnimationUtils filterAnim = new AnimationUtils(0f, 10f, Easings.CUBIC_OUT);
+    private final AnimationUtils searchAnim = new AnimationUtils(0f, 10f, Easings.CUBIC_OUT);
+    private final AnimationUtils paletteAnim = new AnimationUtils(0f, 11f, Easings.CUBIC_OUT);
+
+    /** Пилюля активной вкладки: текущие X/W плывут к целевым. */
+    private float pillX, pillW = -1f;
+
+    private Module tooltipModule;
+
+    // Кэш координат для кликов
+    private float panelX, panelY, panelW, panelH;
+    private float searchX, searchY, searchW, searchH = 22f;
+    private float paletteX, paletteY, paletteSize = 20f;
 
     public ClickGuiScreen() {
         super(Text.literal("wonderful"));
-        openedAt = System.nanoTime();
-        lastFrameNanos = openedAt;
-        int idx = 0;
         for (Module.ModuleCategory c : Module.ModuleCategory.values()) {
-            windows.add(new DropdownWindow(c, idx++));
+            categories.add(c);
         }
+        activeCategory = categories.get(0);
+        lastFrameNanos = System.nanoTime();
         ThemePanel.init();
     }
 
@@ -65,139 +86,9 @@ public class ClickGuiScreen extends Screen {
         return false;
     }
 
+    /** Единый акцент GUI — один цвет темы. */
     static int accent() {
         return ThemePanel.accentSolid();
-    }
-
-    /**
-     * Дрейфующие акцентные свечения за окнами: два больших мягких пятна
-     * (верхнее и нижнее) медленно плывут по эллипсу, окрашиваясь темой.
-     */
-    private void renderAura(MatrixStack ms, float alpha) {
-        if (alpha < 0.03f) return;
-        float t = (System.currentTimeMillis() % 14000L) / 14000f;
-        float ang = t * (float) (Math.PI * 2);
-        float dx = (float) Math.sin(ang) * (this.width * 0.16f);
-        float dy = (float) Math.cos(ang) * (this.height * 0.10f);
-
-        float s1 = Math.min(300f, this.width * 0.30f);
-        int c1 = ColorUtils.applyAlpha(ThemePanel.accent(this.height * 0.30f), 0.15f * alpha);
-        RenderUtils.drawShadow(ms, this.width * 0.30f - s1 / 2f + dx, this.height * 0.32f - s1 / 2f + dy,
-                s1, s1, s1 / 2f, s1 * 0.42f, c1, c1, c1, c1);
-
-        float s2 = Math.min(340f, this.width * 0.34f);
-        int c2 = ColorUtils.applyAlpha(ThemePanel.accent(this.height * 0.72f), 0.13f * alpha);
-        RenderUtils.drawShadow(ms, this.width * 0.72f - s2 / 2f - dx, this.height * 0.72f - s2 / 2f - dy,
-                s2, s2, s2 / 2f, s2 * 0.40f, c2, c2, c2, c2);
-    }
-
-    /**
-     * Бренд-бар сверху по центру: пульсирующая точка + имя клиента + версия
-     * на блюр-панели в общем стиле. Появляется вместе с окнами.
-     */
-    private void renderBrand(MatrixStack ms, float alpha) {
-        if (alpha < 0.03f) return;
-        Font f15 = Fonts.getFont("suisse", 15);
-        Font f10 = Fonts.getFont("suisse", 10);
-        if (f15 == null || f10 == null) return;
-
-        String name = "wonderful";
-        String ver = "v1.0";
-        float nameW = DropdownWindow.tw(15, name);
-        float verW = DropdownWindow.tw(10, ver);
-        float dotR = 2.6f;
-        float pad = 12f;
-        float w = dotR * 2f + 9f + nameW + 9f + verW + pad * 2f;
-        float h = 25f;
-        float x = (this.width - w) / 2f;
-        float y = 8f;
-        float rise = (1f - alpha) * 8f;
-
-        RenderUtils.drawShadow(ms, x, y + rise + 1f, w, h, 8f, 10f,
-                ColorUtils.applyAlpha(ColorUtils.rgba(0, 0, 0, 255), 0.42f * alpha));
-        RenderUtils.drawBlur(ms, x, y + rise, w, h, 8f, 10f,
-                ColorUtils.rgba(7, 11, 21, (int) (165 * alpha)));
-        RenderUtils.drawRoundedRect(ms, x, y + rise, w, h, 8f,
-                ColorUtils.rgba(12, 15, 24, (int) (225 * alpha)));
-        int acT = ThemePanel.accent(y + rise + 3f);
-        int acB = ThemePanel.accent(y + rise + h - 3f);
-        RenderUtils.drawRoundedRectOutline(ms, x, y + rise, w, h, 8f, 1f,
-                ColorUtils.applyAlpha(acT, (int) (150 * alpha)), ColorUtils.applyAlpha(acT, (int) (150 * alpha)),
-                ColorUtils.applyAlpha(acB, (int) (100 * alpha)), ColorUtils.applyAlpha(acB, (int) (100 * alpha)));
-
-        // Пульсирующая точка слева
-        float pulse = 0.5f + 0.5f * (float) Math.sin(System.currentTimeMillis() / 850.0);
-        float dcx = x + pad + dotR;
-        float dcy = y + rise + h / 2f;
-        RenderUtils.drawRoundCircle(ms, dcx, dcy, dotR * (1.9f + 0.5f * pulse),
-                ColorUtils.applyAlpha(acT, 0.16f + 0.10f * pulse * alpha));
-        RenderUtils.drawRoundCircle(ms, dcx, dcy, dotR * (1f + 0.14f * pulse),
-                ColorUtils.applyAlpha(acT, (0.75f + 0.25f * pulse) * alpha));
-
-        float cy = y + rise + h / 2f;
-        DropdownWindow.text(ms, 15, name, dcx + dotR + 9f, cy - DropdownWindow.fh(15) / 2f,
-                ColorUtils.rgba(242, 244, 250, (int) (250 * alpha)));
-        DropdownWindow.text(ms, 10, ver, x + w - pad - verW, cy - DropdownWindow.fh(10) / 2f + 1f,
-                ColorUtils.applyAlpha(acT, 0.85f * alpha));
-
-        // Градиентная линия-подчерк внизу панели
-        RenderUtils.drawGradientRect(ms, x + pad, y + rise + h - 2.2f, w - pad * 2f, 1.1f, 1f,
-                ColorUtils.applyAlpha(acT, 0.55f * alpha),
-                ColorUtils.applyAlpha(acB, 0.55f * alpha), true);
-    }
-
-    /** Акцент с учётом градиента и позиции по экрану (для использования в разных частях GUI). */
-    public static int accentAt(float y) {
-        return ThemePanel.accent(y);
-    }
-
-    private void initPositions() {
-        positionsInitialized = true;
-        float gap = 8f;
-        final float marginX = 6f;
-        final float leftReserve = ThemePanel.W + 12f; // место слева под панель тем
-
-        int n = windows.size();
-        float totalW = n * WIN_W + (n - 1) * gap;
-        float rowY = 44f; // ниже бренд-бара
-        float availW = this.width - marginX * 2 - leftReserve;
-
-        if (totalW <= availW) {
-            // Один ровный ряд, выровнен по правой части после панели тем
-            float startX = marginX + leftReserve + (availW - totalW) / 2f;
-            for (int i = 0; i < n; i++) {
-                DropdownWindow w = windows.get(i);
-                w.x = startX + i * (WIN_W + gap);
-                w.y = rowY;
-            }
-        } else {
-            // Узкий экран: переносим лишние окна на следующий ряд
-            int perRow = Math.max(1, (int) ((availW + gap) / (WIN_W + gap)));
-            int idx = 0;
-            while (idx < n) {
-                int inRow = Math.min(perRow, n - idx); // сколько окон реально осталось в этом ряду
-                float availBody = Math.max(60f, this.height - 14f - (rowY + DropdownWindow.HEADER_H));
-                float rowW = inRow * WIN_W + (inRow - 1) * gap;
-                float rowStartX = marginX + leftReserve + Math.max(0, (availW - rowW) / 2f);
-                float rowMaxH = 0f;
-                for (int k = 0; k < inRow; k++) {
-                    DropdownWindow w = windows.get(idx + k);
-                    w.x = rowStartX + k * (WIN_W + gap);
-                    w.y = rowY;
-                    rowMaxH = Math.max(rowMaxH, w.estimatedWindowHeight(availBody));
-                }
-                rowY += rowMaxH + gap;
-                idx += inRow;
-            }
-        }
-
-        // Каскадное появление окон
-        long stagger = 0L;
-        for (DropdownWindow w : windows) {
-            w.openAtNanos = openedAt + stagger;
-            stagger += 70_000_000L;
-            w.open = true;
-        }
     }
 
     private void requestClose() {
@@ -209,6 +100,10 @@ public class ClickGuiScreen extends Screen {
         ClientSoundPlayer.playSound("closegui.wav", 0.6, 1.0f);
     }
 
+    // ============================================================
+    // Рендер
+    // ============================================================
+
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         MatrixStack ms = context.getMatrices();
@@ -218,111 +113,247 @@ public class ClickGuiScreen extends Screen {
         lastFrameNanos = now;
         screenHeightCached = this.height;
 
-        if (!positionsInitialized) initPositions();
-
-        float maxP = 0f;
-        for (DropdownWindow w : windows) {
-            w.updateOpenState(now, closing);
-            maxP = Math.max(maxP, MathHelper.clamp(w.openAnim.getValue(), 0f, 1f));
-        }
-
-        if (maxP > 0.01f || !closing) {
-            // Матовое стекло: блюр всего экрана поверх мира + тёмный тинт
-            RenderUtils.drawBlur(ms, -2, -2, this.width + 4, this.height + 4, 0f, 18f,
-                    ColorUtils.rgba(4, 7, 14, (int) (150 * maxP)));
-            renderAura(ms, maxP);
-        }
-
-        for (DropdownWindow w : windows) {
-            w.render(ms, this, mouseX, mouseY, dt);
-        }
-
-        ThemePanel.render(context, mouseX, mouseY, maxP);
-
-        renderBrand(ms, maxP);
-        renderTooltip(ms, windows, mouseX, mouseY);
-        renderFilterBar(ms, mouseX, mouseY, maxP);
-
-        if (closing) {
-            boolean done = true;
-            for (DropdownWindow w : windows) {
-                if (w.openAnim.getValue() > 0.015f) {
-                    done = false;
-                    break;
-                }
-            }
-            if (done) {
+        openAnim.update(closing ? 0f : 1f);
+        float p = MathHelper.clamp(openAnim.getValue(), 0f, 1f);
+        if (p <= 0.01f) {
+            if (closing) {
                 closing = false;
                 close();
             }
+            return;
         }
+
+        // Панель: мягкий въезд (масштаб + сдвиг вверх + фейд)
+        float scale = 0.965f + 0.035f * p;
+        float rise = (1f - p) * 10f;
+
+        panelW = Math.min(Math.max(MIN_W, 440f), this.width - 20f);
+        panelH = Math.min(Math.max(MIN_H, 310f), this.height - 24f);
+        panelX = (this.width - panelW) / 2f;
+        panelY = (this.height - panelH) / 2f - 6f;
+
+        float cxp = panelX + panelW / 2f;
+        float cyp = panelY + panelH / 2f;
+
+        // Фон: матовое стекло (блюр + тёмный тинт)
+        RenderUtils.drawBlur(ms, -2, -2, this.width + 4, this.height + 4, 0f, 16f,
+                ColorUtils.rgba(3, 5, 11, (int) (148 * p)));
+
+        ms.push();
+        ms.translate(cxp, cyp, 0f);
+        ms.scale(scale, scale, 1f);
+        ms.translate(-cxp, -cyp, 0f);
+        float py = panelY - rise;
+
+        int ac = accent();
+
+        // Панель: тень + блюр + фон + тонкая обводка
+        RenderUtils.drawShadow(ms, panelX, py, panelW, panelH, 12f, 16f,
+                ColorUtils.applyAlpha(ColorUtils.rgba(0, 0, 0, 255), 0.55f * p));
+        RenderUtils.drawBlur(ms, panelX, py, panelW, panelH, 12f, 10f,
+                ColorUtils.rgba(7, 10, 18, (int) (185 * p)));
+        RenderUtils.drawRoundedRect(ms, panelX, py, panelW, panelH, 12f,
+                ColorUtils.rgba(12, 15, 23, (int) (246 * p)));
+        RenderUtils.drawRoundedRectOutline(ms, panelX, py, panelW, panelH, 12f, 1f,
+                ColorUtils.rgba(255, 255, 255, (int) (22 * p)),
+                ColorUtils.rgba(255, 255, 255, (int) (22 * p)),
+                ColorUtils.rgba(0, 0, 0, (int) (50 * p)),
+                ColorUtils.rgba(0, 0, 0, (int) (50 * p)));
+
+        renderHeader(ms, mouseX, mouseY, py, p, ac);
+        renderTabs(ms, mouseX, mouseY, py, dt, p, ac);
+
+        // Контент
+        float contentY = py + HEADER_H + TABS_H;
+        float contentH = panelH - HEADER_H - TABS_H - FOOTER_H;
+        list.bounds(panelX + 2f, contentY, panelW - 4f, contentH);
+        list.render(ms, mouseX, mouseY, dt, p, activeCategory, ac);
+
+        renderFooter(ms, py, p, ac);
+
+        ms.pop();
+
+        // Панель тем — отдельным окном рядом (открывается кнопкой-палитрой)
+        renderThemePanel(context, mouseX, mouseY, p);
+
+        renderTooltip(ms, mouseX, mouseY, p, ac);
     }
 
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        int mx = (int) mouseX, my = (int) mouseY;
+    /** Шапка: точка + название, поиск, кнопка палитры. */
+    private void renderHeader(MatrixStack ms, int mouseX, int mouseY, float py, float p, int ac) {
+        float hcy = py + HEADER_H / 2f;
 
-        if (closing) return true;
+        // Точка-акцент + название
+        RenderUtils.drawRoundCircle(ms, panelX + 16f, hcy, 2.6f,
+                ColorUtils.applyAlpha(ac, 0.9f * p));
+        ModuleList.text(ms, 15, "wonderful", panelX + 26f, hcy - ModuleList.fh(15) / 2f,
+                ColorUtils.rgba(242, 244, 250, (int) (250 * p)));
 
-        // Клик по полю поиска — активировать поиск (ввод идёт в фильтр)
-        float ffp = MathHelper.clamp(filterAnim.getValue(), 0f, 1f);
-        float fmx = filterBoxX, fmy = filterBoxY + (1f - ffp) * 8f;
-        if (HoveringUtils.isHovered(mx, my, fmx, fmy, filterBoxW, filterBoxH)) {
-            filterActive = true;
-            return true;
+        // Кнопка палитры (темы) справа
+        paletteX = panelX + panelW - 14f - paletteSize;
+        paletteY = hcy - paletteSize / 2f;
+        boolean palHover = HoveringUtils.isHovered(mouseX, mouseY, paletteX - 3f, paletteY - 3f,
+                paletteSize + 6f, paletteSize + 6f);
+        paletteAnim.update(ThemePanel.isOpen() ? 1f : palHover ? 0.6f : 0f);
+        float palP = MathHelper.clamp(paletteAnim.getValue(), 0f, 1f);
+        if (palP > 0.03f) {
+            RenderUtils.drawRoundedRect(ms, paletteX - 3f, paletteY - 3f,
+                    paletteSize + 6f, paletteSize + 6f, (paletteSize + 6f) / 2f,
+                    ColorUtils.rgba(255, 255, 255, (int) (26 * palP * p)));
         }
+        GuiIcons.draw(ms, "theme_palette", paletteX + 1.5f, paletteY + 1.5f, paletteSize - 3f,
+                ColorUtils.applyAlpha(
+                        ThemePanel.isOpen() ? ac : ColorUtils.rgba(178, 185, 200, 255),
+                        (ThemePanel.isOpen() ? 0.95f : 0.85f) * p));
 
-        // Клик по панели тем
-        if (ThemePanel.hit(mx, my)) {
-            ThemePanel.mouseClick(mx, my, button);
-            return true;
-        }
+        // Поле поиска: расширяется в фокусе (есть текст)
+        boolean focused = !filter.isEmpty();
+        searchAnim.update(focused ? 1f : 0f);
+        float sp = MathHelper.clamp(searchAnim.getValue(), 0f, 1f);
+        float baseW = 118f;
+        searchW = baseW + 46f * sp;
+        searchX = paletteX - 10f - searchW;
+        searchY = hcy - searchH / 2f;
 
-        if (listeningBind != null) {
-            applyBind(listeningBind, KeyBoardUtils.createMouseBind(button));
-            listeningBind = null;
-            return true;
-        }
+        RenderUtils.drawRoundedRect(ms, searchX, searchY, searchW, searchH, searchH / 2f,
+                ColorUtils.rgba(255, 255, 255, (int) ((focused ? 16 : 9) * p)));
+        RenderUtils.drawRoundedRectOutline(ms, searchX, searchY, searchW, searchH, searchH / 2f, 1f,
+                ColorUtils.applyAlpha(ac, (int) ((focused ? 90 : 24) * p)),
+                ColorUtils.applyAlpha(ac, (int) ((focused ? 90 : 24) * p)),
+                ColorUtils.rgba(255, 255, 255, (int) (12 * p)),
+                ColorUtils.rgba(255, 255, 255, (int) (12 * p)));
 
-        for (int i = windows.size() - 1; i >= 0; i--) {
-            DropdownWindow w = windows.get(i);
-            if (!w.hitAny(mx, my)) continue;
+        // Лупа
+        RenderUtils.drawRoundCircle(ms, searchX + 9f, hcy - 1.6f, 2.4f,
+                ColorUtils.rgba(150, 157, 172, (int) (200 * p)));
+        RenderUtils.drawRoundedRect(ms, searchX + 10.6f, hcy + 1.2f, 3.4f, 1f, 0.5f,
+                ColorUtils.rgba(150, 157, 172, (int) (200 * p)));
 
-            bringToFront(w);
-
-            if (w.hitHeader(mx, my)) {
-                // Окна закреплены: их нельзя перетаскивать и сворачивать
-                return true;
+        Font sf = ModuleList.f(11);
+        if (sf == null) return;
+        float textX = searchX + 18f;
+        float maxTextW = searchW - 26f;
+        if (focused) {
+            String shown = ModuleList.filter;
+            while (shown.length() > 1 && ModuleList.tw(11, shown) > maxTextW) {
+                shown = shown.substring(1);
             }
-
-            if (w.hitBody(mx, my)) {
-                if (activeTextSetting != null) activeTextSetting = null;
-                w.handleClick(button, mx, my);
-                return true;
-            }
-
-            return true;
+            boolean blink = (System.currentTimeMillis() / 500) % 2 == 0;
+            ModuleList.text(ms, 11, shown + (blink ? "|" : ""), textX, hcy - ModuleList.fh(11) / 2f,
+                    ColorUtils.rgba(236, 240, 248, (int) (240 * p)));
+        } else {
+            ModuleList.text(ms, 11, "Поиск...", textX, hcy - ModuleList.fh(11) / 2f,
+                    ColorUtils.rgba(132, 140, 156, (int) (165 * p)));
         }
 
-        activeTextSetting = null;
-        return super.mouseClicked(mouseX, mouseY, button);
+        // Разделитель под шапкой
+        RenderUtils.drawRoundedRect(ms, panelX + 10f, py + HEADER_H - 1f, panelW - 20f, 1f, 0.5f,
+                ColorUtils.rgba(255, 255, 255, (int) (18 * p)));
     }
 
-    private void bringToFront(DropdownWindow w) {
-        windows.remove(w);
-        windows.add(w);
+    /** Вкладки категорий: иконка + название, пилюля активной плавает между ними. */
+    private void renderTabs(MatrixStack ms, int mouseX, int mouseY, float py, float dt, float p, int ac) {
+        float tabY = py + HEADER_H;
+        float pad = 10f;
+
+        // Раскладка вкладок подряд от левого края
+        float tx = panelX + pad;
+        float targetX = 0f, targetW = 0f;
+        List<float[]> rects = new ArrayList<>();
+        for (Module.ModuleCategory c : categories) {
+            float iconS = 13f;
+            float labelW = ModuleList.tw(12, c.getName());
+            float w = iconS + 5f + labelW + 16f;
+            rects.add(new float[]{tx, w});
+            if (c == activeCategory) {
+                targetX = tx;
+                targetW = w;
+            }
+            tx += w + 4f;
+        }
+
+        // Пилюля: X/W плывут к активной вкладке
+        if (pillW < 0f) {
+            pillX = targetX;
+            pillW = targetW;
+        }
+        float k = 1f - (float) Math.exp(-dt * 15.0);
+        pillX += (targetX - pillX) * k;
+        pillW += (targetW - pillW) * k;
+
+        // Пилюля активной вкладки + акцентная линия снизу
+        RenderUtils.drawRoundedRect(ms, pillX, tabY + 4f, pillW, TABS_H - 9f, 7f,
+                ColorUtils.applyAlpha(ac, 0.16f * p));
+        RenderUtils.drawRoundedRect(ms, pillX + 6f, tabY + TABS_H - 5.2f, pillW - 12f, 1.6f, 0.8f,
+                ColorUtils.applyAlpha(ac, 0.85f * p));
+
+        // Содержимое вкладок
+        for (int i = 0; i < categories.size(); i++) {
+            Module.ModuleCategory c = categories.get(i);
+            float rx = rects.get(i)[0];
+            float rw = rects.get(i)[1];
+            boolean active = c == activeCategory;
+            boolean hov = !active && HoveringUtils.isHovered(mouseX, mouseY, rx, tabY + 3f, rw, TABS_H - 6f);
+
+            if (hov) {
+                RenderUtils.drawRoundedRect(ms, rx, tabY + 4f, rw, TABS_H - 9f, 7f,
+                        ColorUtils.rgba(255, 255, 255, (int) (12 * p)));
+            }
+
+            float iconS = 13f;
+            float cy = tabY + TABS_H / 2f;
+            int iconCol = active
+                    ? ColorUtils.applyAlpha(ac, 0.95f * p)
+                    : ColorUtils.rgba(150, 157, 172, (int) (200 * p));
+            CategoryIcons.draw(ms, c, rx + 9f, cy - iconS / 2f, iconS, iconCol);
+
+            ModuleList.text(ms, 12, c.getName(), rx + 9f + iconS + 5f, cy - ModuleList.fh(12) / 2f,
+                    active
+                            ? ColorUtils.rgba(240, 243, 250, (int) (248 * p))
+                            : ColorUtils.rgba(176, 183, 197, (int) (205 * p)));
+        }
+
+        RenderUtils.drawRoundedRect(ms, panelX + 10f, tabY + TABS_H - 1f, panelW - 20f, 1f, 0.5f,
+                ColorUtils.rgba(255, 255, 255, (int) (18 * p)));
     }
 
-    private void renderTooltip(MatrixStack ms, List<DropdownWindow> list, int mouseX, int mouseY) {
-        // Тултип не мешает во время активных взаимодействий
-        boolean blocked = draggingSlider != null || listeningBind != null || activeTextSetting != null;
-        Module cand = null;
-        if (!blocked) {
-            for (int i = list.size() - 1; i >= 0; i--) {
-                cand = list.get(i).tooltipCandidate();
-                if (cand != null) break;
-            }
+    /** Подвал: счётчики слева, подсказка управления справа. */
+    private void renderFooter(MatrixStack ms, float py, float p, int ac) {
+        float fy = py + panelH - FOOTER_H / 2f;
+
+        int total = list.modules(activeCategory).size();
+        int enabled = list.enabledCount(activeCategory);
+        String counts = enabled + " / " + total + " вкл";
+        float dotR = 2f;
+        RenderUtils.drawRoundCircle(ms, panelX + 16f, fy, dotR,
+                ColorUtils.applyAlpha(enabled > 0 ? ac : ColorUtils.rgba(120, 127, 142, 255), 0.8f * p));
+        ModuleList.text(ms, 10, counts, panelX + 24f, fy - ModuleList.fh(10) / 2f,
+                ColorUtils.rgba(170, 177, 192, (int) (215 * p)));
+
+        String hint = "ЛКМ — вкл · ПКМ — настройки · СКМ — бинд";
+        ModuleList.text(ms, 10, hint, panelX + panelW - 14f - ModuleList.tw(10, hint),
+                fy - ModuleList.fh(10) / 2f, ColorUtils.rgba(120, 127, 142, (int) (185 * p)));
+    }
+
+    /** Панель тем поверх, рядом с главной панелью. */
+    private void renderThemePanel(DrawContext context, int mouseX, mouseY, float p) {
+        ThemePanel.updateOpen(dt);
+        if (!ThemePanel.isShown()) return;
+
+        float ax = panelX + panelW + 10f;
+        if (ax + ThemePanel.W > this.width - 4f) {
+            ax = Math.max(4f, panelX - ThemePanel.W - 10f);
         }
+        ThemePanel.anchor(ax, panelY + HEADER_H);
+        ThemePanel.render(context, mouseX, mouseY, p);
+    }
+
+    /** Тултип с описанием модуля. */
+    private void renderTooltip(MatrixStack ms, int mouseX, int mouseY, float alpha, int ac) {
+        boolean blocked = draggingSlider != null || listeningBind != null
+                || listeningModule != null || activeTextSetting != null;
+        Module cand = blocked ? null : list.tooltipCandidate();
+
         if (blocked && tooltipModule != null) {
             tooltipAnim.update(0f);
             float a0 = MathHelper.clamp(tooltipAnim.getValue(), 0f, 1f);
@@ -338,81 +369,100 @@ public class ClickGuiScreen extends Screen {
         if (al <= 0.03f || tooltipModule == null) return;
 
         String desc = tooltipModule.getDescription();
-        Font ft = Fonts.getFont("suisse", 11);
+        Font ft = ModuleList.f(11);
         if (ft == null) return;
-        float tw = ft.getWidth(desc) + 18;
-        float th = 22;
+        float tw = ModuleList.tw(11, desc) + 18f;
+        float th = 22f;
 
         float tx = MathHelper.clamp(mouseX + 14, 4, this.width - tw - 4);
         float ty = MathHelper.clamp(mouseY + 16, 4, this.height - th - 4);
 
         RenderUtils.drawShadow(ms, tx, ty, tw, th, 6f, 10f,
-                ColorUtils.applyAlpha(ColorUtils.rgba(0, 0, 0, 255), 0.45f * al));
+                ColorUtils.applyAlpha(ColorUtils.rgba(0, 0, 0, 255), 0.45f * al * alpha));
         RenderUtils.drawRoundedRect(ms, tx, ty, tw, th, 6f,
-                ColorUtils.rgba(8, 11, 19, (int) (240 * al)));
+                ColorUtils.rgba(8, 11, 19, (int) (240 * al * alpha)));
         RenderUtils.drawRoundedRectOutline(ms, tx, ty, tw, th, 6f, 1f,
-                ColorUtils.applyAlpha(accentAt(ty + 3f), (int) (120 * al)),
-                ColorUtils.applyAlpha(accentAt(ty + 3f), (int) (120 * al)),
-                ColorUtils.applyAlpha(accentAt(ty + th - 3f), (int) (80 * al)),
-                ColorUtils.applyAlpha(accentAt(ty + th - 3f), (int) (80 * al)));
+                ColorUtils.applyAlpha(ac, (int) (110 * al * alpha)),
+                ColorUtils.applyAlpha(ac, (int) (110 * al * alpha)),
+                ColorUtils.rgba(255, 255, 255, (int) (18 * al * alpha)),
+                ColorUtils.rgba(255, 255, 255, (int) (18 * al * alpha)));
         RenderUtils.drawRoundedRect(ms, tx + 5, ty + 5.5f, 2.2f, th - 11f, 1.1f,
-                ColorUtils.applyAlpha(accentAt(ty + th / 2f), 0.9f * al));
-        ft.draw(ms, desc, tx + 13, ty + th / 2f - DropdownWindow.fh(11) / 2f,
-                ColorUtils.rgba(233, 237, 245, (int) (245 * al)));
+                ColorUtils.applyAlpha(ac, 0.9f * al * alpha));
+        ModuleList.text(ms, 11, desc, tx + 13, ty + th / 2f - ModuleList.fh(11) / 2f,
+                ColorUtils.rgba(233, 237, 245, (int) (245 * al * alpha)));
     }
 
-    /** Поле поиска модулей — внизу по центру, над панелью цветов, чтобы не налезать на окна.
-     *  Активируется кликом: тогда ввод идёт в фильтр, а чип не виден при неактивном поиске. */
-    private void renderFilterBar(MatrixStack ms, int mouseX, int mouseY, float alpha) {
-        if (closing || alpha < 0.05f) return;
-        float bw = 210f;
-        float bh = 26f;
-        filterBoxW = bw;
-        filterBoxH = bh;
-        filterBoxX = (this.width - bw) / 2f;
-        filterBoxY = this.height - 58f;
+    // ============================================================
+    // Ввод
+    // ============================================================
 
-        boolean hov = HoveringUtils.isHovered(mouseX, mouseY, filterBoxX, filterBoxY, bw, bh);
-        boolean act = filterActive;
-        int out = act ? (int) (125 * alpha) : hov ? (int) (46 * alpha) : (int) (24 * alpha);
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        int mx = (int) mouseX, my = (int) mouseY;
+        if (closing) return true;
 
-        // Рабочая анимация появления и плавного подъёма поля поиска
-        filterAnim.update(act || hov ? 1f : 0f);
-        float fp = MathHelper.clamp(filterAnim.getValue(), 0f, 1f);
-        float fa = fp * fp;
-        float fty = filterBoxY + (1f - fp) * 8f;
-
-        RenderUtils.drawShadow(ms, filterBoxX, fty, bw, bh, 8f, 10f,
-                ColorUtils.applyAlpha(ColorUtils.rgba(0, 0, 0, 255), 0.4f * alpha));
-        RenderUtils.drawRoundedRect(ms, filterBoxX, fty, bw, bh, 9f,
-                ColorUtils.rgba(8, 11, 19, (int) ((act ? 215 : 132) * alpha)));
-        int accentCol = accentAt(fty + bh / 2f);
-        RenderUtils.drawRoundedRectOutline(ms, filterBoxX, fty, bw, bh, 9f, 1f,
-                ColorUtils.applyAlpha(accentCol, (int) (out * fa)), ColorUtils.applyAlpha(accentCol, (int) (out * fa)),
-                ColorUtils.rgba(255, 255, 255, (int) (16 * alpha)), ColorUtils.rgba(255, 255, 255, (int) (16 * alpha)));
-
-        Font ft = Fonts.getFont("suisse", 12);
-        if (ft == null) return;
-        float ty = fty + bh / 2f - DropdownWindow.fh(12) / 2f;
-        if (act) {
-            boolean blink = (System.currentTimeMillis() / 500) % 2 == 0;
-            String shown = filter + (blink ? "|" : "");
-            ft.draw(ms, shown, filterBoxX + 12, ty, ColorUtils.rgba(236, 240, 248, (int) (240 * alpha)));
-        } else {
-            ft.draw(ms, "Поиск модулей...", filterBoxX + 12, ty,
-                    ColorUtils.rgba(132, 140, 156, (int) (165 * alpha * (0.7f + 0.3f * fa))));
+        // Панель тем — поверх, перехватывает свои клики
+        if (ThemePanel.isShown() && ThemePanel.hit(mx, my)) {
+            ThemePanel.mouseClick(mx, my, button);
+            return true;
         }
+
+        if (listeningBind != null) {
+            applyBind(listeningBind, KeyBoardUtils.createMouseBind(button));
+            listeningBind = null;
+            return true;
+        }
+
+        if (HoveringUtils.isHovered(mx, my, panelX, panelY, panelW, panelH)) {
+            // Кнопка палитры
+            if (HoveringUtils.isHovered(mx, my, paletteX - 3f, paletteY - 3f, paletteSize + 6f, paletteSize + 6f)) {
+                if (button == 0) ThemePanel.setOpen(!ThemePanel.isOpen());
+                return true;
+            }
+            // Поле поиска — просто визуальный фокус, ввод идёт всегда
+            if (HoveringUtils.isHovered(mx, my, searchX, searchY, searchW, searchH)) {
+                return true;
+            }
+            // Вкладки
+            float tabY = panelY + HEADER_H;
+            if (my >= tabY && my <= tabY + TABS_H) {
+                float tx = panelX + 10f;
+                for (Module.ModuleCategory c : categories) {
+                    float iconS = 13f;
+                    float w = iconS + 5f + ModuleList.tw(12, c.getName()) + 16f;
+                    if (mx >= tx && mx <= tx + w) {
+                        if (activeCategory != c) {
+                            activeCategory = c;
+                        }
+                        return true;
+                    }
+                    tx += w + 4f;
+                }
+            }
+            // Список модулей
+            if (list.hit(mx, my)) {
+                if (activeTextSetting != null) activeTextSetting = null;
+                list.handleClick(button, mx, my, activeCategory);
+                return true;
+            }
+            return true;
+        }
+
+        if (activeTextSetting != null) activeTextSetting = null;
+        if (listeningModule != null) listeningModule = null;
+        return super.mouseClicked(mouseX, mouseY, button);
     }
+
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
-        int mx = (int) mouseX, my = (int) mouseY;
-
+        int mx = (int) mouseX;
         if (draggingSlider != null) {
             applySlider(draggingSlider, mx);
             return true;
         }
-
-        ThemePanel.mouseDrag(mx, my);
+        if (ThemePanel.isShown()) {
+            ThemePanel.mouseDrag(mx, (int) mouseY);
+        }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
     }
 
@@ -429,16 +479,13 @@ public class ClickGuiScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         int mx = (int) mouseX, my = (int) mouseY;
-        if (ThemePanel.hit(mx, my)) {
+        if (ThemePanel.isShown() && ThemePanel.hit(mx, my)) {
             ThemePanel.mouseScroll((float) verticalAmount, mx, my);
             return true;
         }
-        for (int i = windows.size() - 1; i >= 0; i--) {
-            DropdownWindow w = windows.get(i);
-            if (w.hitBody(mx, my)) {
-                w.scrollTarget -= (float) verticalAmount * 24f;
-                return true;
-            }
+        if (list.hit(mx, my)) {
+            list.scroll((float) verticalAmount);
+            return true;
         }
         return true;
     }
@@ -455,7 +502,7 @@ public class ClickGuiScreen extends Screen {
     /** Установка клавиши бинда: синхронизирует настройку и module.setKey владельца. */
     private static void applyBind(BindSetting bind, int key) {
         if (bind.getOwner() != null) {
-            bind.getOwner().setKey(key); // Module.setKey синкнет и саму настройку
+            bind.getOwner().setKey(key);
         } else {
             bind.setKey(key);
         }
@@ -463,11 +510,6 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        // Ввод в hex-поле темы имеет приоритет
-        if (ThemePanel.hitHexFocused()) {
-            ThemePanel.keyPressed(keyCode);
-            return true;
-        }
         if (listeningModule != null) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) {
                 listeningModule.setKey(-1);
@@ -509,15 +551,10 @@ public class ClickGuiScreen extends Screen {
             return true;
         }
 
-        if (filterActive && keyCode == GLFW.GLFW_KEY_BACKSPACE && !filter.isEmpty()) {
-            filter = filter.substring(0, filter.length() - 1);
-            return true;
-        }
-
+        // Esc: сначала панель тем, потом очистка поиска, затем закрытие
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            if (filterActive) {
-                filterActive = false;
-                filter = "";
+            if (ThemePanel.isOpen()) {
+                ThemePanel.setOpen(false);
                 return true;
             }
             if (!filter.isEmpty()) {
@@ -533,24 +570,26 @@ public class ClickGuiScreen extends Screen {
             return true;
         }
 
+        // Backspace — правка поиска
+        if (keyCode == GLFW.GLFW_KEY_BACKSPACE && !filter.isEmpty()) {
+            filter = filter.substring(0, filter.length() - 1);
+            return true;
+        }
+
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
     public boolean charTyped(char chr, int modifiers) {
-        if (ThemePanel.hitHexFocused()) {
-            ThemePanel.charTyped(chr);
-            return true;
-        }
-        if (listeningBind != null) return true;
+        if (listeningBind != null || listeningModule != null) return true;
         if (activeTextSetting != null) {
             if (chr >= 32 && chr != 127) {
                 activeTextSetting.setText(activeTextSetting.get() + chr);
             }
             return true;
         }
-        // Символы идут в поиск только когда поле поиска активно — иначе не трогаем фильтр
-        if (filterActive && chr >= 32 && chr != 127) {
+        // Ввод всегда идёт в поиск — как в современных GUI
+        if (chr >= 32 && chr != 127) {
             filter = filter + chr;
             return true;
         }
@@ -565,11 +604,11 @@ public class ClickGuiScreen extends Screen {
         activeTextSetting = null;
         draggingSlider = null;
         filter = "";
-        filterActive = false;
+        ThemePanel.setOpen(false);
     }
 
     @Override
     public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
-        // Фон — матовое стекло из render() (блюр + тинт); отдельно затемнять не нужно
+        // Фон — матовое стекло из render() (блюр + тинт)
     }
 }

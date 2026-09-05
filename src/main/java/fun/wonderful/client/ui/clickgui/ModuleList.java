@@ -31,16 +31,20 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-class DropdownWindow {
+/**
+ * Список модулей выбранной категории внутри главной панели ClickGUI:
+ * строки с тумблерами, биндами и раскрывающимися настройками.
+ * Плавный скролл, hover-подсветка, ripple при переключении, каскад
+ * появления строк при смене вкладки/поиске.
+ */
+class ModuleList {
 
-    static final int WIN_W = 120; // Широкие столбики в стиле CS GUI
-    static final int HEADER_H = 32;
-    static final int PAD = 7;
-    static final int ROW_H = 25;
-    static final int ROW_GAP = 3;
-    private static final int INSET_W = 94; // Широкий блок настроек (CS GUI стиль)
-    private static final int INSET_X = (WIN_W - INSET_W) / 2; // блок настроек центрируется по ширине окна
-    // Стандартная ширина содержимого: INSET_W - 12 (запас для заголовка и отступов)
+    // ===== Геометрия (задаётся панелью каждый кадр) =====
+    private float x, y, w, h;
+
+    static final int ROW_H = 26;
+    private static final int ROW_GAP = 2;
+    private static final int PAD = 12;
 
     // Высоты строк настроек — единый источник для рендера, кликов и расчёта высоты
     static final int SETTINGS_TOP_PAD = 12;
@@ -56,17 +60,6 @@ class DropdownWindow {
     static final int MODE_PILL_H = 17;
     private static final float CHECKBOX_SIZE = 11f;
 
-    final Module.ModuleCategory category;
-    float x, y;
-    boolean open;
-    long openAtNanos;
-    float screenW, screenH;
-
-    float scrollTarget, scrollCurrent;
-
-    final AnimationUtils openAnim = new AnimationUtils(0f, 6f, Easings.BACK_OUT);
-    final AnimationUtils scrollVis = new AnimationUtils(0f, 11f, Easings.CUBIC_OUT);
-
     private final Map<Object, AnimationUtils> animPool = new HashMap<>();
     private final Map<FloatSetting, AnimationUtils> sliderValues = new HashMap<>();
     private final Map<ModeSetting, float[]> modeGlide = new HashMap<>();
@@ -77,15 +70,16 @@ class DropdownWindow {
     private Module hoverModule;
     private long hoverSince;
 
-    DropdownWindow(Module.ModuleCategory category, int index) {
-        this.category = category;
-    }
+    private float scrollTarget, scrollCurrent;
+    private final AnimationUtils scrollVis = new AnimationUtils(0f, 11f, Easings.CUBIC_OUT);
 
-    private AnimationUtils anim(Object key, float speed, Easing easing) {
-        return animPool.computeIfAbsent(key, k -> new AnimationUtils(0f, speed, easing));
-    }
+    /** Каскад появления строк: ключ контента + время последней смены. */
+    private String contentKey = "";
+    private long staggerAt;
 
-    private static Font f(int size) {
+    // ===== Текстовые хелперы (общие для всего GUI) =====
+
+    static Font f(int size) {
         return Fonts.getFont("suisse", size);
     }
 
@@ -102,26 +96,127 @@ class DropdownWindow {
     }
 
     static float fh(int size) {
-        // Визуальная (капсная) высота букв: capHeight 0.8047em × half-size рендер.
-        // Центрирование "yc - fh(size)/2" теперь ставит текст ровно по центру строки.
+        // Визуальная (капсная) высота букв: capHeight 0.8047em × half-size рендер
         return size * 0.4023f;
     }
 
-    void updateOpenState(long now, boolean closing) {
-        boolean allowed = !closing && now >= openAtNanos;
-        openAnim.update(open && allowed ? 1f : 0f);
+    // ===== Публичный интерфейс =====
+
+    void bounds(float x, float y, float w, float h) {
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
     }
 
-    private float openP() {
-        return MathHelper.clamp(openAnim.getValue(), 0f, 1f);
-    }
-
-    private List<Module> modules() {
+    List<Module> modules(Module.ModuleCategory category) {
         List<Module> out = new ArrayList<>();
         for (Module m : ModuleClass.INSTANCE.getObject()) {
             if (m.getCategory() == category) out.add(m);
         }
         return out;
+    }
+
+    int enabledCount(Module.ModuleCategory category) {
+        int n = 0;
+        for (Module m : modules(category)) {
+            if (m.isEnable()) n++;
+        }
+        return n;
+    }
+
+    boolean hit(int mx, int my) {
+        return HoveringUtils.isHovered(mx, my, x, y, w, h);
+    }
+
+    void scroll(float amount) {
+        scrollTarget -= amount * 26f;
+    }
+
+    Module tooltipCandidate() {
+        if (hoverModule != null
+                && System.currentTimeMillis() - hoverSince > 350
+                && matches(hoverModule)) {
+            return hoverModule;
+        }
+        return null;
+    }
+
+    // ===== Рендер =====
+
+    void render(MatrixStack ms, int mouseX, int mouseY, float dt, float alpha,
+                Module.ModuleCategory category, int accent) {
+        List<Module> mods = visibleModules(category);
+
+        // Смена вкладки или фильтра — каскадный пуск строк и сброс скролла
+        String key = category.name() + "|" + ClickGuiScreen.filter;
+        if (!key.equals(contentKey)) {
+            contentKey = key;
+            staggerAt = System.currentTimeMillis();
+            scrollTarget = 0f;
+        }
+        long sinceStagger = System.currentTimeMillis() - staggerAt;
+
+        float bodyFull = fullBodyHeight(mods);
+        float maxScroll = Math.max(0f, bodyFull - h);
+        scrollTarget = MathHelper.clamp(scrollTarget, 0f, maxScroll);
+        float sk = 1f - (float) Math.exp(-dt * 16.0);
+        scrollCurrent += (scrollTarget - scrollCurrent) * sk;
+        if (Math.abs(scrollTarget - scrollCurrent) < 0.05f) scrollCurrent = scrollTarget;
+
+        ScissorUtils.push();
+        ScissorUtils.setFromComponentCoordinates((int) x, (int) y - 1, (int) w,
+                (int) Math.ceil(h) + 2);
+
+        float cy = y + 4 - scrollCurrent;
+        for (int i = 0; i < mods.size(); i++) {
+            Module m = mods.get(i);
+
+            // Каскад появления: каждая строка чуть позже предыдущей, максимум ~0.4 с
+            float rowT = MathHelper.clamp((sinceStagger - i * 14L) / 110f, 0f, 1f);
+            float rowA = alpha * rowT;
+            float rowOff = (1f - rowT) * 7f;
+            if (rowA > 0.01f) {
+                renderModule(ms, m, cy + rowOff, mouseX, mouseY, accent, alpha, dt, rowA);
+            }
+            cy += moduleFullHeight(m) + rowGapF(m);
+        }
+
+        ScissorUtils.pop();
+
+        // Тонкий скроллбар — проявляется при наведении на список или во время прокрутки
+        boolean sbHot = hit(mouseX, mouseY) || Math.abs(scrollTarget - scrollCurrent) > 2f;
+        scrollVis.update(sbHot && bodyFull > h + 1f ? 1f : 0f);
+        float sba = MathHelper.clamp(scrollVis.getValue(), 0f, 1f);
+        if (sba > 0.03f && bodyFull > h + 1f) {
+            float trackX = x + w - 4f;
+            float trackY = y + 3f;
+            float trackH = h - 6f;
+            float thumbH = Math.max(16f, trackH * (h / Math.max(1f, bodyFull)));
+            thumbH = Math.min(thumbH, trackH);
+            float thumbY = trackY + (scrollCurrent / Math.max(1f, maxScroll)) * (trackH - thumbH);
+            thumbY = MathHelper.clamp(thumbY, trackY, Math.max(trackY, trackY + trackH - thumbH));
+            RenderUtils.drawRoundedRect(ms, trackX, thumbY, 2f, thumbH, 1f,
+                    ColorUtils.applyAlpha(accent, 0.55f * sba * alpha));
+        }
+    }
+
+    /** Строки, прошедшие поиск. */
+    private List<Module> visibleModules(Module.ModuleCategory category) {
+        List<Module> out = new ArrayList<>();
+        for (Module m : modules(category)) {
+            if (matches(m)) out.add(m);
+        }
+        return out;
+    }
+
+    private boolean matches(Module m) {
+        String q = ClickGuiScreen.filter.trim().toLowerCase(Locale.ROOT);
+        return q.isEmpty() || m.getName().toLowerCase(Locale.ROOT).contains(q);
+    }
+
+    private AnimationUtils anim(Object key, float speed, Easing ease) {
+        return animPool.computeIfAbsent(key, k -> new AnimationUtils(0f, speed, ease));
     }
 
     private boolean hasSettings(Module m) {
@@ -132,7 +227,8 @@ class DropdownWindow {
     }
 
     private int pillLines(ModeSetting mode) {
-        return countLines(pillLayout(mode));
+        // Тот же доступный ширин, что и при рендере/кликах — иначе разойдётся число строк
+        return countLines(pillLayout(mode, insetW() - 12f));
     }
 
     private int countLines(List<float[]> layout) {
@@ -141,9 +237,9 @@ class DropdownWindow {
         return Math.max(1, Math.round(lastY / (float) MODE_LINE_H) + 1);
     }
 
-    private List<float[]> pillLayout(ModeSetting mode) {
+    private List<float[]> pillLayout(ModeSetting mode, float forWidth) {
+        float maxW = (forWidth > 0f ? forWidth : insetW()) - 10f;
         List<float[]> out = new ArrayList<>();
-        float maxW = INSET_W - 10;
         float px = 0;
         float py = 0;
         for (String mdn : mode.getModes()) {
@@ -158,226 +254,48 @@ class DropdownWindow {
         return out;
     }
 
+    private float insetX() {
+        return x + PAD + 8f;
+    }
+
+    private float insetW() {
+        return w - (PAD + 8f) * 2f;
+    }
+
     private int settingsHeight(Module m) {
-        int h = SETTINGS_TOP_PAD;
+        int hh = SETTINGS_TOP_PAD;
         for (Setting<?> s : m.getSettings()) {
             if (s == null || !s.isVisible()) continue;
-            if (s instanceof BooleanSetting) h += BOOL_H;
-            else if (s instanceof FloatSetting) h += SLIDER_H;
-            else if (s instanceof TextSetting) h += TEXT_H;
-            else if (s instanceof BindSetting) h += BIND_H;
-            else if (s instanceof ModeSetting mode) h += MODE_LABEL_H + pillLines(mode) * MODE_LINE_H + MODE_PAD_B;
-            else if (s instanceof ListSetting list) h += LIST_HEAD_H + list.getSettings().size() * LIST_CHILD_H;
+            if (s instanceof BooleanSetting) hh += BOOL_H;
+            else if (s instanceof FloatSetting) hh += SLIDER_H;
+            else if (s instanceof TextSetting) hh += TEXT_H;
+            else if (s instanceof BindSetting) hh += BIND_H;
+            else if (s instanceof ModeSetting mode) hh += MODE_LABEL_H + pillLines(mode) * MODE_LINE_H + MODE_PAD_B;
+            else if (s instanceof ListSetting list) hh += LIST_HEAD_H + list.getSettings().size() * LIST_CHILD_H;
         }
-        return h;
+        return hh;
     }
 
     private float moduleFullHeight(Module m) {
         float ex = MathHelper.clamp(anim(m.toString() + "_ex", 10f, Easings.CUBIC_OUT).getValue(), 0f, 1f);
         int sh = hasSettings(m) ? settingsHeight(m) : 0;
-        return (ROW_H + sh * ex) * fltP(m);
+        return ROW_H + sh * ex;
     }
 
-    /** Прогресс схлопывания строки при поиске */
-    private float fltP(Module m) {
-        return MathHelper.clamp(anim(m.toString() + "_flt", 10f, Easings.CUBIC_OUT).getValue(), 0f, 1f);
-    }
-
-    /** Промежуток после строки, тоже анимированно сжимается при фильтрации */
     private float rowGapF(Module m) {
-        return ROW_GAP * fltP(m);
+        return ROW_GAP;
     }
 
-    private float fullBodyHeight() {
-        float h = 4;
-        for (Module m : modules()) h += moduleFullHeight(m) + rowGapF(m);
-        return h;
+    private float fullBodyHeight(List<Module> mods) {
+        float hh = 4;
+        for (Module m : mods) hh += moduleFullHeight(m) + rowGapF(m);
+        return hh;
     }
 
-    /** Оценка полной высоты окна (для начальной раскладки без перекрытий).
-     *  Не зависит от анимаций: считается из фактического числа строк. */
-    float estimatedWindowHeight(float avail) {
-        float rows = 4f;
-        for (Module m : modules()) rows += ROW_H + ROW_GAP;
-        return HEADER_H + Math.min(rows, Math.max(24f, avail)) + 8f;
-    }
-
-    private float viewHeight() {
-        float avail = screenH - (y + HEADER_H) - 8;
-        // Окна не растягиваются на весь экран — появляется внутренний скролл
-        float cap = Math.max(120f, screenH * 0.62f);
-        return Math.max(24f, Math.min(fullBodyHeight(), Math.min(avail, cap)));
-    }
-
-    boolean hitAny(int mx, int my) {
-        return hitHeader(mx, my) || hitBody(mx, my);
-    }
-
-    boolean hitHeader(int mx, int my) {
-        if (openP() < 0.25f) return false;
-        return HoveringUtils.isHovered(mx, my, x, y, WIN_W, HEADER_H);
-    }
-
-    boolean hitBody(int mx, int my) {
-        float p = openP();
-        if (p < 0.6f) return false;
-        return HoveringUtils.isHovered(mx, my, x, y + HEADER_H, WIN_W, viewHeight() * p);
-    }
-
-    private boolean matches(Module m) {
-        // Фильтр применяется только когда поле поиска активно (кликнуто).
-        // Иначе модули не схлопываются — «тестовых модулей больше нет» пользователем.
-        if (!ClickGuiScreen.filterActive) return true;
-        String q = ClickGuiScreen.filter.trim().toLowerCase();
-        return q.isEmpty() || m.getName().toLowerCase().contains(q);
-    }
-
-    Module tooltipCandidate() {
-        if (openP() < 0.7f) return null;
-        if (hoverModule != null
-                && System.currentTimeMillis() - hoverSince > 350
-                && matches(hoverModule)) {
-            return hoverModule;
-        }
-        return null;
-    }
-
-    void render(MatrixStack ms, ClickGuiScreen gui, int mouseX, int mouseY, float dt) {
-        this.screenW = gui.width;
-        this.screenH = gui.height;
-
-        float p = openP();
-        if (p <= 0.01f) return;
-
-        // Окно плавно "опускается" сверху при открытии
-        float slideT = 1f - p;
-        float wy = y - slideT * slideT * 14f;
-
-        int ac = ClickGuiScreen.accent();
-
-        float bodyView = viewHeight();
-        float bodyDisp = bodyView * p;
-        float totalH = HEADER_H + bodyDisp + 4f * p;
-
-        float bodyFull = fullBodyHeight();
-        float maxScroll = Math.max(0f, bodyFull - bodyView);
-        scrollTarget = MathHelper.clamp(scrollTarget, 0f, maxScroll);
-        float sk = 1f - (float) Math.exp(-dt * 16.0);
-        scrollCurrent += (scrollTarget - scrollCurrent) * sk;
-        if (Math.abs(scrollTarget - scrollCurrent) < 0.05f) scrollCurrent = scrollTarget;
-
-        RenderUtils.drawShadow(ms, x, wy, WIN_W, totalH, 11f,
-                12f, ColorUtils.applyAlpha(ColorUtils.rgba(0, 0, 0, 255), 0.5f));
-
-        RenderUtils.drawBlur(ms, x, wy, WIN_W, totalH, 11f, 9f, ColorUtils.rgba(7, 11, 21, (int) (180 * p)));
-
-        RenderUtils.drawRoundedRect(ms, x, wy, WIN_W, totalH, 11f,
-                ColorUtils.rgba(12, 15, 24, (int) (246 * p)));
-
-        // Обводка окна — градиент по акценту (сверху/снизу)
-        int outTop = ColorUtils.applyAlpha(ClickGuiScreen.accentAt(wy + 3f), (int) (165 * p));
-        int outBot = ColorUtils.applyAlpha(ClickGuiScreen.accentAt(wy + totalH - 3f), (int) (110 * p));
-        RenderUtils.drawRoundedRectOutline(ms, x, wy, WIN_W, totalH, 11f, 1f,
-                outTop, outTop,
-                outBot, outBot);
-
-        int acH = ClickGuiScreen.accentAt(wy + HEADER_H / 2f);
-        renderHeader(ms, mouseX, mouseY, acH, p, wy);
-
-        ScissorUtils.push();
-        ScissorUtils.setFromComponentCoordinates(x + 1, wy + HEADER_H, WIN_W - 2,
-                Math.max(0, (int) Math.ceil(bodyDisp) - 1));
-
-        float cy = wy + HEADER_H + 4 - scrollCurrent;
-        List<Module> mods = modules();
-        for (int mi = 0; mi < mods.size(); mi++) {
-            Module m = mods.get(mi);
-            int acM = ClickGuiScreen.accentAt(cy);
-            renderModule(ms, m, cy, mouseX, mouseY, acM, p, dt, mi);
-            cy += moduleFullHeight(m) + rowGapF(m);
-        }
-
-        ScissorUtils.pop();
-
-        // Скроллбар проявляется только когда нужен: наведение на тело или активный скролл
-        boolean sbHot = hitBody(mouseX, mouseY)
-                || Math.abs(scrollTarget - scrollCurrent) > 2f;
-        scrollVis.update(sbHot && bodyFull > bodyView + 1f ? 1f : 0f);
-        float sba = MathHelper.clamp(scrollVis.getValue(), 0f, 1f);
-        if (sba > 0.03f && bodyFull > bodyView + 1f) {
-            float trackX = x + WIN_W - 5;
-            float trackY = wy + HEADER_H + 4;
-            float trackH = bodyDisp - 8;
-            float thumbH = Math.max(14f, trackH * (trackH / Math.max(1f, bodyFull)));
-            thumbH = Math.min(thumbH, trackH);
-            float thumbY = trackY + (scrollCurrent / Math.max(1f, maxScroll)) * (trackH - thumbH);
-            thumbY = MathHelper.clamp(thumbY, trackY, Math.max(trackY, trackY + trackH - thumbH));
-            RenderUtils.drawRoundedRect(ms, trackX, thumbY, 2f, thumbH, 1f,
-                    ColorUtils.setAlphaColor(ac, (int) (170 * sba * p)));
-        }
-    }
-
-    /** Иконки категорий — кастомный GL-рендер (билинейная фильтрация, без пикселей) */
-    private void drawCategoryIcon(MatrixStack ms, Module.ModuleCategory cat, float cx, float cy, float size, int color) {
-        CategoryIcons.draw(ms, cat, cx - size / 2f, cy - size / 2f, size, color);
-    }
-
-        private void renderHeader(MatrixStack ms, int mouseX, int mouseY, int ac, float p, float wy) {
-        // Хедер категории — статичный заголовок, НЕ кнопка: убираем hover-подсветку
-        // и анимацию смещения, чтобы надпись не «выбеливалась» и не реагировала на мышь.
-        float op = MathHelper.clamp(openAnim.getValue(), 0f, 1f);
-        float hcy = wy + HEADER_H / 2f;
-
-        // Иконка категории — PNG-текстура, тинтится акцентом GUI
-        if (op > 0.02f) {
-            int iconCol = ColorUtils.applyAlpha(ColorUtils.interpolateColor(ac, 0xFFFFFFFF, 0.3f), op);
-            float isz = 15f;
-            drawCategoryIcon(ms, category, x + PAD + 3f + isz / 2f, hcy, isz, iconCol);
-        }
-
-        text(ms, 15, category.getName(), x + PAD + 24, hcy - fh(15) / 2f,
-                ColorUtils.rgba(242, 244, 250, (int) (250 * op)));
-
-        // Бейдж включённых модулей категории справа: точка + счётчик
-        int enabledCnt = 0;
-        for (Module m : modules()) {
-            if (m.isEnable()) enabledCnt++;
-        }
-        String cnt = String.valueOf(enabledCnt);
-        float cntW = tw(10, cnt);
-        float dotR = 2.1f;
-        float badgeW = dotR * 2f + 5f + cntW + 7f;
-        float bx = x + WIN_W - PAD - 2f - badgeW;
-        float by = hcy - 7f;
-        if (enabledCnt > 0) {
-            RenderUtils.drawRoundedRect(ms, bx, by, badgeW, 14f, 7f,
-                    ColorUtils.applyAlpha(ac, 0.16f * op));
-        } else {
-            RenderUtils.drawRoundedRect(ms, bx, by, badgeW, 14f, 7f,
-                    ColorUtils.rgba(255, 255, 255, (int) (14 * op)));
-        }
-        float dotA = enabledCnt > 0 ? 0.95f : 0.30f;
-        RenderUtils.drawRoundCircle(ms, bx + 7f, hcy, dotR,
-                ColorUtils.applyAlpha(enabledCnt > 0 ? ac : ColorUtils.rgba(160, 168, 182, 255), dotA * op));
-        text(ms, 10, cnt, bx + dotR * 2f + 8f, hcy - fh(10) / 2f,
-                enabledCnt > 0
-                        ? ColorUtils.rgba(238, 241, 249, (int) (240 * op))
-                        : ColorUtils.rgba(150, 157, 172, (int) (185 * op)));
-
-        float uw = (WIN_W - PAD * 2);
-        int hdrAccent = ColorUtils.applyAlpha(ClickGuiScreen.accentAt(wy + HEADER_H), (int) (110 * op));
-        RenderUtils.drawRoundedRect(ms, x + PAD, wy + HEADER_H - 1f, uw, 1f, 0.5f, hdrAccent);
-    }
+    // ===== Строка модуля =====
 
     private void renderModule(MatrixStack ms, Module m, float ry, int mouseX, int mouseY,
-                              int ac, float winP, float dt, int idx) {
-        boolean match = matches(m);
-        AnimationUtils fltA = anim(m.toString() + "_flt", 10f, Easings.CUBIC_OUT);
-        fltA.update(match ? 1f : 0f);
-        float flt = MathHelper.clamp(fltA.getValue(), 0f, 1f);
-
-        float vp = winP * (0.15f + 0.85f * flt);
-
+                              int ac, float winP, float dt, float vp) {
         AnimationUtils tgA = anim(m.toString() + "_tg", 9f, Easings.BACK_OUT);
         tgA.update(m.isEnable() ? 1f : 0f);
         float enP = MathHelper.clamp(tgA.getValue(), 0f, 1.15f);
@@ -387,11 +305,9 @@ class DropdownWindow {
         exA.update(expanded.contains(m) ? 1f : 0f);
         float exP = MathHelper.clamp(exA.getValue(), 0f, 1f);
 
-        if (flt <= 0.02f) return;
-
-        // Hover-отслеживание — для тултипов и мягкой подсветки строки
+        // Hover: мягкая пилюля + светлеющее имя
         boolean listMoving = Math.abs(scrollTarget - scrollCurrent) > 0.2f;
-        boolean hov = !listMoving && match && HoveringUtils.isHovered(mouseX, mouseY, x, ry, WIN_W, ROW_H);
+        boolean hov = !listMoving && HoveringUtils.isHovered(mouseX, mouseY, x, ry, w, ROW_H);
         if (hov) {
             hoverModule = m;
             hoverSince = System.currentTimeMillis();
@@ -402,22 +318,21 @@ class DropdownWindow {
         hovA.update(hov ? 1f : 0f);
         float hp = MathHelper.clamp(hovA.getValue(), 0f, 1f);
 
-        // Мягкая hover-подложка: пилюля с лёгким высветлением
         if (hp > 0.02f) {
-            RenderUtils.drawRoundedRect(ms, x + 2f, ry + 0.5f, WIN_W - 4f, ROW_H - 1f, 5f,
-                    ColorUtils.rgba(255, 255, 255, (int) (15 * hp * vp)));
+            RenderUtils.drawRoundedRect(ms, x + 6f, ry + 0.5f, w - 12f, ROW_H - 1f, 6f,
+                    ColorUtils.rgba(255, 255, 255, (int) (14 * hp * vp)));
         }
 
-        // Акцентная полоса слева у включённого модуля: растёт из центра при включении
+        // Акцентная риска слева у включённого модуля
         float enBar = Math.min(1f, enP);
         if (enBar > 0.03f) {
-            float barH = (ROW_H - 9f) * enBar;
-            RenderUtils.drawRoundedRect(ms, x + 2.6f, ry + (ROW_H - barH) / 2f, 1.8f, barH, 0.9f,
+            float barH = (ROW_H - 10f) * enBar;
+            RenderUtils.drawRoundedRect(ms, x + 8.2f, ry + (ROW_H - barH) / 2f, 1.8f, barH, 0.9f,
                     ColorUtils.applyAlpha(ac, 0.9f * enBar * vp));
         }
 
-        // Имя: плавно светлеет при включении и при наведении, чуть съезжает вправо на hover
-        float nameX = x + PAD + 2 + 2f * hp;
+        // Имя: светлеет при включении и наведении
+        float nameX = x + PAD + 4f + 2f * hp;
         int nameBase = ColorUtils.rgba(205, 211, 224, (int) (225 * vp));
         int nameOn = ColorUtils.interpolateColor(nameBase,
                 ColorUtils.rgba(243, 246, 252, (int) (245 * vp)), Math.min(1f, enBar * 0.8f));
@@ -425,32 +340,44 @@ class DropdownWindow {
                 ColorUtils.rgba(235, 240, 248, (int) (248 * vp)), hp);
         text(ms, 13, m.getName(), nameX, ry + ROW_H / 2f - fh(13) / 2f, nameCol);
 
-        float swX = x + WIN_W - PAD - 2f - ToggleSwitch.W;
-        float swY = ry + ROW_H / 2f - ToggleSwitch.H / 2f;
+        // Стрелка-индикатор наличия настроек (ПКМ)
+        if (hasSettings(m)) {
+            AnimationUtils rotA = anim(m.toString() + "_arr", 10f, Easings.CUBIC_OUT);
+            rotA.update(expanded.contains(m) ? 1f : 0f);
+            float rp = MathHelper.clamp(rotA.getValue(), 0f, 1f);
+            float ax = x + w - PAD - 4f - ToggleSwitch.W - 14f;
+            float ay = ry + ROW_H / 2f;
+            ms.push();
+            ms.translate(ax, ay, 0f);
+            ms.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Z.rotationDegrees(-90f * rp));
+            int arrCol = ColorUtils.rgba(150, 157, 172, (int) ((150 + 60 * rp) * vp));
+            text(ms, 10, "›", -fh(10) / 2f - 1f, -fh(10) / 2f, arrCol);
+            ms.pop();
+        }
 
+        // Бинд-кнопка: чип с клавишей; клик — перебинд
         boolean isListening = ClickGuiScreen.listeningModule == m;
+        float swX = x + w - PAD - 4f - ToggleSwitch.W;
+        float swY = ry + ROW_H / 2f - ToggleSwitch.H / 2f;
         if (isListening) {
             float lw = tw(10, "[...]") + 12;
             float lh = 14;
             float lx = swX - 8 - lw;
             float ly = ry + ROW_H / 2f - lh / 2f;
             RenderUtils.drawRoundedRect(ms, lx, ly, lw, lh, lh / 2f,
-                    ColorUtils.applyAlpha(ac, 0.3f));
+                    ColorUtils.applyAlpha(ac, 0.3f * vp));
             text(ms, 10, "[...]", lx + 7, ry + ROW_H / 2f - fh(10) / 2f,
-                    ColorUtils.applyAlpha(ac, 0.9f));
+                    ColorUtils.applyAlpha(ac, 0.9f * vp));
         } else if (m.getKey() != -1) {
             String kn = KeyBoardUtils.getBindName(m.getKey());
-            float kA = vp;
-            if (kA > 0.04f) {
-                float kw = tw(10, kn) + 12;
-                float kh = 14;
-                float kx = swX - 8 - kw;
-                float ky = ry + ROW_H / 2f - kh / 2f;
-                RenderUtils.drawRoundedRect(ms, kx, ky, kw, kh, kh / 2f,
-                        ColorUtils.rgba(255, 255, 255, (int) (20 * kA)));
-                text(ms, 10, kn, kx + 7, ry + ROW_H / 2f - fh(10) / 2f,
-                        ColorUtils.rgba(200, 206, 219, (int) (210 * kA)));
-            }
+            float kw = tw(10, kn) + 12;
+            float kh = 14;
+            float kx = swX - 8 - kw;
+            float ky = ry + ROW_H / 2f - kh / 2f;
+            RenderUtils.drawRoundedRect(ms, kx, ky, kw, kh, kh / 2f,
+                    ColorUtils.rgba(255, 255, 255, (int) (20 * vp)));
+            text(ms, 10, kn, kx + 7, ry + ROW_H / 2f - fh(10) / 2f,
+                    ColorUtils.rgba(200, 206, 219, (int) (210 * vp)));
         }
 
         ToggleSwitch.draw(ms, swX, swY, enC, vp, ac);
@@ -466,13 +393,13 @@ class DropdownWindow {
                     float ra = age - ring * 0.22f;
                     if (ra <= 0f || ra >= 1f) continue;
                     float ease = 1f - (1f - ra) * (1f - ra);
-                    float rw = ToggleSwitch.W + (6f + 30f * ease) * 2f;
-                    float rh = ToggleSwitch.H + (6f + 30f * ease) * 2f;
+                    float rw = ToggleSwitch.W + (5f + 26f * ease) * 2f;
+                    float rh = ToggleSwitch.H + (5f + 26f * ease) * 2f;
                     RenderUtils.drawRoundedRectOutline(ms, cxS - rw / 2f, cyS - rh / 2f, rw, rh, rh / 2f, 1f,
-                            ColorUtils.applyAlpha(ac, 0.5f * (1f - ra) * vp),
-                            ColorUtils.applyAlpha(ac, 0.5f * (1f - ra) * vp),
-                            ColorUtils.applyAlpha(ac, 0.35f * (1f - ra) * vp),
-                            ColorUtils.applyAlpha(ac, 0.35f * (1f - ra) * vp));
+                            ColorUtils.applyAlpha(ac, 0.45f * (1f - ra) * vp),
+                            ColorUtils.applyAlpha(ac, 0.45f * (1f - ra) * vp),
+                            ColorUtils.applyAlpha(ac, 0.30f * (1f - ra) * vp),
+                            ColorUtils.applyAlpha(ac, 0.30f * (1f - ra) * vp));
                 }
             } else {
                 lastToggleAt.remove(m);
@@ -487,11 +414,11 @@ class DropdownWindow {
     private void renderSettings(MatrixStack ms, Module m, float sy, float exP,
                                 int mouseX, int mouseY, int ac, float winP, float dt) {
         float sh = settingsHeight(m) * exP;
-        RenderUtils.drawRoundedRect(ms, x + INSET_X, sy, INSET_W, sh, 6f,
+        RenderUtils.drawRoundedRect(ms, insetX(), sy, insetW(), sh, 6f,
                 ColorUtils.rgba(2, 5, 12, (int) (72 * exP)));
 
-        float ix = x + INSET_X + 6;
-        float iw = INSET_W - 12;
+        float ix = insetX() + 6;
+        float iw = insetW() - 12;
         float cy = sy + 5;
 
         int rowIdx = 0;
@@ -501,12 +428,10 @@ class DropdownWindow {
             float ry = cy + (1f - rowA) * 4f;
 
             if (s instanceof BooleanSetting b) {
-                int rowAc = ClickGuiScreen.accentAt(ry);
-                drawBoolRow(ms, b, ix, ry, iw, BOOL_H, rowA, rowAc, winP, mouseX, mouseY);
+                drawBoolRow(ms, b, ix, ry, iw, BOOL_H, rowA, ac, winP, mouseX, mouseY);
                 cy += BOOL_H;
             } else if (s instanceof FloatSetting num) {
-                int rowAc = ClickGuiScreen.accentAt(ry);
-                drawSliderRow(ms, num, ix, ry, iw, SLIDER_H, rowA, rowAc, winP, mouseX, mouseY);
+                drawSliderRow(ms, num, ix, ry, iw, SLIDER_H, rowA, ac, winP, mouseX, mouseY);
                 cy += SLIDER_H;
             } else if (s instanceof TextSetting ts) {
                 drawTextRow(ms, ts, ix, ry, iw, TEXT_H, rowA, ac, winP);
@@ -521,8 +446,7 @@ class DropdownWindow {
                 cy += LIST_HEAD_H;
                 for (BooleanSetting child : list.getSettings()) {
                     float childY = cy + (1f - rowA) * 4f;
-                    int rowAc = ClickGuiScreen.accentAt(childY);
-                    drawMiniBoolRow(ms, child, ix, childY, iw, LIST_CHILD_H, rowA, rowAc, winP, mouseX, mouseY);
+                    drawMiniBoolRow(ms, child, ix, childY, iw, LIST_CHILD_H, rowA, ac, winP, mouseX, mouseY);
                     cy += LIST_CHILD_H;
                 }
             }
@@ -590,20 +514,11 @@ class DropdownWindow {
     private void drawCheckbox(MatrixStack ms, boolean on, float cp, float bx, float by, float a, int ac, boolean hov) {
         if (a < 0.01f) return;
 
-        // Тень - мягкое освещение снизу
         RenderUtils.drawRoundedRect(ms, bx, by + 0.4f, CHECKBOX_SIZE, CHECKBOX_SIZE, 4f,
                 ColorUtils.rgba(0, 0, 0, (int) (60 * a)));
-
-        // Основной фон квадрата (выключенное состояние)
         RenderUtils.drawRoundedRect(ms, bx, by, CHECKBOX_SIZE, CHECKBOX_SIZE, 4f,
                 ColorUtils.rgba(30, 35, 42, (int) (220 * a)));
 
-        // Сияние при наведении
-        int glowColor = on ? ColorUtils.applyAlpha(ac, 0.15f) : ColorUtils.rgba(255, 255, 255, (int) (20 * a));
-        RenderUtils.drawRoundedRect(ms, bx - 1.5f, by - 1.5f, CHECKBOX_SIZE + 3f, CHECKBOX_SIZE + 3f, 5f,
-                glowColor);
-
-        // Закрашивание акцентом темы вместо галочки: плавно растёт из центра
         if (cp > 0.01f) {
             float inset = 2f;
             float inner = CHECKBOX_SIZE - inset * 2f;
@@ -615,9 +530,8 @@ class DropdownWindow {
                     ColorUtils.applyAlpha(ac, 0.92f * cp * a));
         }
 
-        // Обводка с градиентным освещением
-        int borderBrightOn = (int) (170 * a);
-        int borderDarkOn = (int) (120 * a);
+        int borderBrightOn = (int) ((hov ? 200 : 150) * a);
+        int borderDarkOn = (int) (110 * a);
         RenderUtils.drawRoundedRectOutline(ms, bx, by, CHECKBOX_SIZE, CHECKBOX_SIZE, 4f, 1f,
                 ColorUtils.rgba(255, 255, 255, borderBrightOn),
                 ColorUtils.rgba(255, 255, 255, borderBrightOn),
@@ -658,7 +572,6 @@ class DropdownWindow {
         float knobCy = trackY + trackH / 2f;
         RenderUtils.drawRoundCircle(ms, knobCx, knobCy + 0.4f, knobR,
                 ColorUtils.rgba(0, 0, 0, (int) (30 * a * winP)));
-        // Акцентное кольцо вокруг ползунка при наведении/перетаскивании
         if (hp > 0.04f) {
             RenderUtils.drawRoundCircle(ms, knobCx, knobCy, knobR + 1.0f,
                     ColorUtils.applyAlpha(ac, 0.22f * hp * a * winP));
@@ -721,7 +634,7 @@ class DropdownWindow {
                               float a, int ac, float winP, float dt, int mouseX, int mouseY) {
         text(ms, 11, mode.name(), x0, y0, ColorUtils.rgba(222, 226, 236, (int) (228 * a * winP)));
 
-        List<float[]> layout = pillLayout(mode);
+        List<float[]> layout = pillLayout(mode, w0);
 
         float[] glide = modeGlide.computeIfAbsent(mode, k -> new float[5]);
         int curIdx = -1;
@@ -733,8 +646,6 @@ class DropdownWindow {
         }
         if (curIdx >= 0) {
             float[] target = layout.get(curIdx);
-            // X и ширина анимируются при переключении выбора, а Y всегда строго следует
-            // за строкой (ty) — это исключает «сползание» highlight по вертикали при скролле.
             float tx = x0 + target[0];
             float tw2 = target[2];
             float ty = y0 + MODE_LABEL_H + target[1];
@@ -749,7 +660,6 @@ class DropdownWindow {
                 glide[2] += (tw2 - glide[2]) * gk;
                 glide[3] += ((float) MODE_PILL_H - glide[3]) * gk;
             }
-            // Пульс при смене выбора — короткая волна по высоте/яркости
             float[] pulse = modePulse.computeIfAbsent(mode, k -> new float[]{0f, -1f});
             pulse[0] += dt;
             if ((int) pulse[1] != curIdx) {
@@ -764,12 +674,10 @@ class DropdownWindow {
             float pwG = glide[2] * pulseScale;
             float phG = glide[3] * pulseScale;
             if (a > 0.02f) {
-                // Внешний «ореол»-пульс (расширяется и тает)
                 if (pulseFade > 0.02f) {
                     RenderUtils.drawRoundedRect(ms, pxG, pyG, pwG, phG, 8f,
                             ColorUtils.applyAlpha(ac, (int) (90 * pulseFade * a * winP)));
                 }
-                // Основная заливка
                 RenderUtils.drawRoundedRect(ms, glide[0], ty, glide[2], glide[3], 6f,
                         ColorUtils.applyAlpha(ac, (int) (230 * a * winP)));
             }
@@ -784,7 +692,6 @@ class DropdownWindow {
             boolean active = mdn.equals(mode.getCurrent());
             boolean hov = HoveringUtils.isHovered(mouseX, mouseY, px, py, pw, MODE_PILL_H);
 
-            // Плавная анимация наведения и «всплытие» выбранной пилюли
             AnimationUtils hA = anim(mode.toString() + "_p" + idx + "_h", 12f, Easings.CUBIC_OUT);
             hA.update(hov ? 1f : 0f);
             float hp = MathHelper.clamp(hA.getValue(), 0f, 1f);
@@ -792,7 +699,6 @@ class DropdownWindow {
             sA.update(active ? 1f : 0f);
             float sp = MathHelper.clamp(sA.getValue(), 0f, 1f);
 
-            // Лёгкое масштабирование активной пилюли поверх глида
             float scale = 1f + 0.05f * sp;
             float pwS = pw * scale;
             float pxS = px + (pw - pwS) / 2f;
@@ -801,8 +707,6 @@ class DropdownWindow {
                 RenderUtils.drawRoundedRect(ms, pxS, py, pwS, MODE_PILL_H, 6f,
                         ColorUtils.rgba(255, 255, 255, (int) ((8 + 8 * hp) * a * winP)));
             }
-            // Текст центрируется по исходной (немасштабированной) пилюле — иначе при
-            // выборе мода надпись «съезжает» вправо вслед за scale/pxS.
             float textX = px + (pw - tw(11, mdn)) / 2f;
             text(ms, 11, mdn, textX, py + MODE_PILL_H / 2f - fh(11) / 2f,
                     active
@@ -821,23 +725,32 @@ class DropdownWindow {
         return String.format(Locale.US, "%." + dec + "f", value);
     }
 
-              void handleClick(int button, int mx, int my) {
+    // ===== Клики =====
+
+    void handleClick(int button, int mx, int my, Module.ModuleCategory category) {
         float exGate = 0.85f;
 
-        float cy = y + HEADER_H + 4 - scrollCurrent;
-        for (Module m : modules()) {
+        float cy = y + 4 - scrollCurrent;
+        for (Module m : visibleModules(category)) {
             float rowH = moduleFullHeight(m);
 
-            if (!matches(m)) {
-                cy += rowH + rowGapF(m);
-                continue;
-            }
+            if (my >= cy && my <= cy + ROW_H && mx >= x && mx <= x + w) {
+                float swX = x + w - PAD - 4f - ToggleSwitch.W;
+                float swY = cy + ROW_H / 2f - ToggleSwitch.H / 2f;
 
-            if (my >= cy && my <= cy + ROW_H && mx >= x && mx <= x + WIN_W) {
                 if (button == 0) {
-                    float swX = x + WIN_W - PAD - 2f - ToggleSwitch.W;
-                    float swY = cy + ROW_H / 2f - ToggleSwitch.H / 2f;
-                    if (ToggleSwitch.hit(mx, my, swX, swY)) {
+                    // Клик по чипу бинда — прослушка клавиши, иначе — переключение
+                    if (m.getKey() != -1 && ClickGuiScreen.listeningModule != m) {
+                        String kn = KeyBoardUtils.getBindName(m.getKey());
+                        float kw = tw(10, kn) + 12;
+                        float kx = swX - 8 - kw;
+                        float ky = cy + ROW_H / 2f - 7f;
+                        if (HoveringUtils.isHovered(mx, my, kx, ky, kw, 14f)) {
+                            ClickGuiScreen.listeningModule = m;
+                            return;
+                        }
+                    }
+                    if (ToggleSwitch.hit(mx, my, swX, swY) || HoveringUtils.isHovered(mx, my, x + 6f, cy, w - 12f, ROW_H)) {
                         m.toggle();
                         lastToggleAt.put(m, System.currentTimeMillis());
                     }
@@ -857,13 +770,13 @@ class DropdownWindow {
                 return;
             }
 
-                        cy += rowH + rowGapF(m);
+            cy += rowH + rowGapF(m);
         }
     }
 
     private boolean handleSettingClick(int button, Module m, int mx, int my, float startCy) {
-        float ix = x + INSET_X + 6;
-        float iw = INSET_W - 12;
+        float ix = insetX() + 6;
+        float iw = insetW() - 12;
         float cy = startCy + 5;
 
         for (Setting<?> s : m.getSettings()) {
@@ -897,13 +810,12 @@ class DropdownWindow {
                 cy += TEXT_H;
             } else if (s instanceof BindSetting bind) {
                 if (button == 0 && HoveringUtils.isHovered(mx, my, ix, cy, iw, BIND_H)) {
-                    // Клик по бинду — режим прослушки: следующая клавиша/кнопка мыши станет биндом
                     ClickGuiScreen.listeningBind = bind;
                     return true;
                 }
                 cy += BIND_H;
             } else if (s instanceof ModeSetting mode) {
-                List<float[]> layout = pillLayout(mode);
+                List<float[]> layout = pillLayout(mode, insetW() - 12);
                 for (int pi = 0; pi < mode.getModes().length; pi++) {
                     float[] pb = layout.get(pi);
                     float px = ix + pb[0];
