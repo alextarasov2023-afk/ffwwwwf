@@ -1,32 +1,33 @@
 {
-  "required": true,
-  "package": "fun.wonderful.mixin",
-  "compatibilityLevel": "JAVA_21",
-  "mixins": [
-    "MinecraftClientMixin",
-    "ClientPlayerEntityMixin",
-    "ClientPlayerInteractionManagerMixin",
-    "ClientConnectionMixin",
-    "KeyboardInputMixin",
-    "InGameGuiMixin",
-    "KeyboardMixin",
-    "MouseMixin",
-    "EntityLookMixin",
-    "CameraMixin",
-    "EntityRenderDispatcherMixin",
-    "WorldRendererMixin",
-    "ChatScreenMixin",
-    "ICameraAccessor",
-    "IEntity",
-    "IMinecraftClientAccessor",
-    "ILivingEntityAccessor",
-    "HeldItemRendererMixin",
-    "HeldItemRendererInvoker"
-  ],
-  "injectors": {
-    "defaultRequire": 1
-  },
-  "overwrites": {
-    "requireAnnotations": true
-  }
+ "required": true,
+ "package": "fun.wonderful.mixin",
+ "compatibilityLevel": "JAVA_21",
+ "mixins": [
+  "MinecraftClientMixin",
+  "ClientPlayerEntityMixin",
+  "ClientPlayerInteractionManagerMixin",
+  "ClientConnectionMixin",
+  "KeyboardInputMixin",
+  "InGameGuiMixin",
+  "KeyboardMixin",
+  "MouseMixin",
+  "EntityLookMixin",
+  "CameraMixin",
+  "EntityRenderDispatcherMixin",
+  "WorldRendererMixin",
+  "ChatScreenMixin",
+  "ICameraAccessor",
+  "IEntity",
+  "IMinecraftClientAccessor",
+  "ILivingEntityAccessor",
+  "HeldItemRendererMixin",
+  "HeldItemRendererInvoker",
+  "ClientWorldMixin"
+ ],
+ "injectors": {
+  "defaultRequire": 1
+ },
+ "overwrites": {
+  "requireAnnotations": true
+ }
 }

@@ -37,23 +37,32 @@ public class Esp extends Module {
     public static Esp INSTANCE = new Esp();
 
     public final BooleanSetting boxes = new BooleanSetting("Боксы", true);
+    public final BooleanSetting glow = new BooleanSetting("Свечение", true);
+    public final BooleanSetting health = new BooleanSetting("Здоровье", true);
+    public final BooleanSetting arrows = new BooleanSetting("Стрелки", true);
     public final BooleanSetting tracers = new BooleanSetting("Трейсеры", true);
     public final BooleanSetting players = new BooleanSetting("Игроки", true);
     public final BooleanSetting mobs = new BooleanSetting("Мобы", false);
     public final BooleanSetting animals = new BooleanSetting("Животные", false);
     public final FloatSetting maxDist = new FloatSetting("Дистанция", 64f, 16f, 160f, 4f);
 
+    private static final net.minecraft.util.Identifier ARROW =
+            net.minecraft.util.Identifier.of("wonderful", "textures/arrows/gps.png");
+
     private static final class Mark {
         float minX, minY, maxX, maxY;
         float cx, cy;
         float dist;
+        float hp = 1f;
+        /** Направление на цель от центра экрана (радианы). NaN = цель на экране. */
+        float offAngle = Float.NaN;
     }
 
     private final List<Mark> marks = new ArrayList<>();
 
     public Esp() {
         super("ESP", "Боксы и трейсеры на игроках и мобах", ModuleCategory.RENDER);
-        addSettings(boxes, tracers, players, mobs, animals, maxDist);
+        addSettings(boxes, glow, health, arrows, tracers, players, mobs, animals, maxDist);
     }
 
     /** World-проход: проекция 8 углов хитбокса в экранные координаты. */
@@ -81,21 +90,41 @@ public class Esp extends Module {
             double iz = MathHelper.lerp(event.getTickDelta(), e.prevZ, e.getZ());
             Box box = e.getBoundingBox().offset(ix - e.getX(), iy - e.getY(), iz - e.getZ());
 
+            // Центр хитбокса: определяем направление для оффскрин-стрелки
+            Vector4f cc = new Vector4f(
+                    (float) (box.getCenter().x - camPos.x),
+                    (float) (box.getCenter().y - camPos.y),
+                    (float) (box.getCenter().z - camPos.z), 1.0f);
+            cc.mul(mvp);
+            boolean centerBehind = cc.w() < 0.01f;
+            float ndcX = centerBehind ? -cc.x() / Math.abs(cc.w()) : cc.x() / cc.w();
+            float ndcY = centerBehind ? -cc.y() / Math.abs(cc.w()) : cc.y() / cc.w();
+            float csx = (ndcX * 0.5f + 0.5f) * sw;
+            float csy = (1f - (ndcY * 0.5f + 0.5f)) * sh;
+            boolean offscreen = centerBehind || csx < -40f || csx > sw + 40f || csy < -40f || csy > sh + 40f;
+
+            Mark m = new Mark();
+            m.dist = mc.player.distanceTo(e);
+            m.hp = MathHelper.clamp(living.getHealth() / Math.max(1f, living.getMaxHealth()), 0f, 1f);
+
+            if (offscreen) {
+                // Цель за спиной/за краем экрана — стрелка по направлению
+                m.offAngle = (float) Math.atan2(csy - sh / 2f, csx - sw / 2f);
+                marks.add(m);
+                continue;
+            }
+
             float minX = Float.MAX_VALUE, minY = Float.MAX_VALUE;
             float maxX = -Float.MAX_VALUE, maxY = -Float.MAX_VALUE;
-            boolean behind = false;
 
-            for (int i = 0; i < 8 && !behind; i++) {
+            for (int i = 0; i < 8; i++) {
                 double bx = (i & 1) == 0 ? box.minX : box.maxX;
                 double by = (i & 2) == 0 ? box.minY : box.maxY;
                 double bz = (i & 4) == 0 ? box.minZ : box.maxZ;
                 Vector4f clip = new Vector4f(
                         (float) (bx - camPos.x), (float) (by - camPos.y), (float) (bz - camPos.z), 1.0f);
                 clip.mul(mvp);
-                if (clip.w() < 0.01f) {
-                    behind = true;
-                    break;
-                }
+                if (clip.w() < 0.01f) continue;
                 float sx = (clip.x() / clip.w() * 0.5f + 0.5f) * sw;
                 float sy = (1f - (clip.y() / clip.w() * 0.5f + 0.5f)) * sh;
                 minX = Math.min(minX, sx);
@@ -103,16 +132,14 @@ public class Esp extends Module {
                 maxX = Math.max(maxX, sx);
                 maxY = Math.max(maxY, sy);
             }
-            if (behind || maxX <= minX) continue;
+            if (maxX <= minX) continue;
 
-            Mark m = new Mark();
             m.minX = minX;
             m.minY = minY;
             m.maxX = maxX;
             m.maxY = maxY;
             m.cx = (minX + maxX) / 2f;
             m.cy = (minY + maxY) / 2f;
-            m.dist = mc.player.distanceTo(e);
             marks.add(m);
         }
     }
@@ -128,9 +155,28 @@ public class Esp extends Module {
         float sh = mc.getWindow().getScaledHeight();
         float maxD = maxDist.get();
 
+        float edgeR = Math.min(sw, sh) * 0.40f;
+
         for (Mark m : marks) {
             // Затухание по дистанции: рядом — ярко, у лимита — тает
             float fade = MathHelper.clamp(1f - (m.dist / maxD) * 0.75f, 0.25f, 1f);
+
+            // Оффскрин-цель: стрелка на окружности вокруг прицела
+            if (!Float.isNaN(m.offAngle)) {
+                if (!arrows.isState()) continue;
+                float ax = sw / 2f + MathHelper.cos(m.offAngle) * edgeR;
+                float ay = sh / 2f + MathHelper.sin(m.offAngle) * edgeR;
+                float size = 13f;
+                int col = ColorUtils.applyAlpha(ac, 0.8f * fade);
+                ms.push();
+                ms.translate(ax, ay, 0f);
+                ms.multiply(net.minecraft.util.math.RotationAxis.POSITIVE_Z.rotationDegrees(
+                        (float) Math.toDegrees(m.offAngle) + 90f));
+                RenderUtils.drawImage(ms, ARROW, -size / 2f, -size / 2f, size, size, col);
+                ms.pop();
+                continue;
+            }
+
             int col = ColorUtils.applyAlpha(ac, 0.85f * fade);
 
             if (tracers.isState()) {
@@ -138,10 +184,34 @@ public class Esp extends Module {
                         ColorUtils.applyAlpha(ac, 0.55f * fade));
             }
 
+            float w = m.maxX - m.minX;
+            float h = m.maxY - m.minY;
+
+            // Свечение: мягкий акцентный ореол вокруг бокса
+            if (glow.isState()) {
+                int gc = ColorUtils.applyAlpha(ac, 0.30f * fade);
+                RenderUtils.drawShadow(ms, m.minX - 2f, m.minY - 2f, w + 4f, h + 4f,
+                        4f, 7f, gc, gc, gc, gc);
+            }
+
+            // Полоса здоровья слева от бокса: снизу вверх, акцент -> красный
+            if (health.isState()) {
+                float barX = m.minX - 5.5f;
+                RenderUtils.drawRoundedRect(ms, barX, m.minY, 1.8f, h, 0.9f,
+                        ColorUtils.rgba(255, 255, 255, (int) (38 * fade)));
+                float fillH = h * m.hp;
+                if (fillH > 0.5f) {
+                    int hpCol = m.hp >= 0.35f
+                            ? ColorUtils.applyAlpha(ac, 0.9f * fade)
+                            : ColorUtils.interpolateColor(
+                                    ColorUtils.applyAlpha(ac, 0.9f * fade), 0xFFFF4553,
+                                    (0.35f - m.hp) / 0.35f);
+                    RenderUtils.drawRoundedRect(ms, barX, m.minY + h - fillH, 1.8f, fillH, 0.9f, hpCol);
+                }
+            }
+
             if (boxes.isState()) {
                 // Угловая обводка: короткие уголки вместо полного прямоугольника
-                float w = m.maxX - m.minX;
-                float h = m.maxY - m.minY;
                 float corner = Math.min(w, h) * 0.28f;
                 float lw = 1.3f;
 
