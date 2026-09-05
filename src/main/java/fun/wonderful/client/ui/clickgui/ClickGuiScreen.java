@@ -75,6 +75,9 @@ public class ClickGuiScreen extends Screen {
 
     private Module tooltipModule;
 
+    /** Медленно плывущие частицы внутри панели (в долях панели 0..1). */
+    private final float[][] particles = new float[16][4]; // fx, fy, vx, vy
+
     // Кэш координат для кликов
     private float panelX, panelY, panelW, panelH;
     private float searchX, searchY, searchW, searchH = 22f;
@@ -90,6 +93,13 @@ public class ClickGuiScreen extends Screen {
         activeCategory = categories.get(0);
         lastFrameNanos = System.nanoTime();
         ThemePanel.init();
+        java.util.Random pr = new java.util.Random(7L);
+        for (float[] pt : particles) {
+            pt[0] = pr.nextFloat();
+            pt[1] = pr.nextFloat();
+            pt[2] = (pr.nextFloat() - 0.5f) * 0.022f;
+            pt[3] = -0.006f - pr.nextFloat() * 0.014f;
+        }
     }
 
     @Override
@@ -171,8 +181,31 @@ public class ClickGuiScreen extends Screen {
                 ColorUtils.applyAlpha(ColorUtils.rgba(0, 0, 0, 255), 0.55f * p));
         RenderUtils.drawBlur(ms, panelX, py, panelW, panelH, 12f, 10f,
                 ColorUtils.rgba(7, 10, 18, (int) (185 * p)));
-        RenderUtils.drawRoundedRect(ms, panelX, py, panelW, panelH, 12f,
-                ColorUtils.rgba(12, 15, 23, (int) (246 * p)));
+        RenderUtils.drawGradientRect(ms, panelX, py, panelW, panelH, 12f,
+                ColorUtils.rgba(14, 17, 26, (int) (246 * p)),
+                ColorUtils.rgba(10, 12, 19, (int) (246 * p)));
+
+        // Частицы: медленно плывут вверх внутри панели, лёгкое мерцание
+        long nowMs = System.currentTimeMillis();
+        for (int i = 0; i < particles.length; i++) {
+            float[] pt = particles[i];
+            pt[0] += pt[2] * dt;
+            pt[1] += pt[3] * dt;
+            if (pt[1] < -0.02f) pt[1] = 1.02f;
+            if (pt[1] > 1.02f) pt[1] = -0.02f;
+            if (pt[0] < -0.02f) pt[0] = 1.02f;
+            if (pt[0] > 1.02f) pt[0] = -0.02f;
+
+            float px = panelX + pt[0] * panelW;
+            float pyi = py + pt[1] * panelH;
+            float tw2 = 0.5f + 0.5f * (float) Math.sin((nowMs + i * 470L) / 900.0);
+            float alpha = (0.05f + 0.05f * tw2) * p;
+            float size = 0.8f + (i % 3) * 0.45f;
+            int col = i % 4 == 0
+                    ? ColorUtils.applyAlpha(ac, alpha)
+                    : ColorUtils.rgba(220, 228, 242, (int) (255 * alpha));
+            RenderUtils.drawRoundCircle(ms, px, pyi, size, col);
+        }
         RenderUtils.drawRoundedRectOutline(ms, panelX, py, panelW, panelH, 12f, 1f,
                 ColorUtils.rgba(255, 255, 255, (int) (22 * p)),
                 ColorUtils.rgba(255, 255, 255, (int) (22 * p)),

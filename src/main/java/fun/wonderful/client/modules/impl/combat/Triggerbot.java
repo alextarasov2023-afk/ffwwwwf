@@ -19,6 +19,7 @@ import fun.wonderful.client.modules.Module;
 import fun.wonderful.client.modules.settings.implement.BooleanSetting;
 import fun.wonderful.client.modules.settings.implement.FloatSetting;
 import fun.wonderful.client.modules.settings.implement.ModeSetting;
+import fun.wonderful.api.storages.implement.HitFxStorage;
 import fun.wonderful.api.storages.implement.RotationStorage;
 
 public class Triggerbot extends Module {
@@ -204,6 +205,7 @@ public class Triggerbot extends Module {
     private void attack(Entity target) {
         mc.interactionManager.attackEntity(mc.player, target);
         mc.player.swingHand(Hand.MAIN_HAND);
+        HitFxStorage.onAttack();
         lastAttackTick = currentTick;
         lastTarget = target;
         landedTicks = 0;

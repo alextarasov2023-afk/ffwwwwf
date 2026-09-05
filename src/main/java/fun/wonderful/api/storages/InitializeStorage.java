@@ -36,5 +36,8 @@ public class InitializeStorage implements QClient {
 
         // Список активных модулей (ArrayList, слушает EventRender.Default)
         new ArrayListStorage();
+
+        // Хит-эффекты: молнии и вспышки при ударах KillAura/Triggerbot
+        new HitFxStorage();
     }
 }

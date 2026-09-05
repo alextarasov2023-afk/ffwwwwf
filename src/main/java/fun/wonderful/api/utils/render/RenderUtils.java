@@ -12,8 +12,13 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 import org.joml.Matrix4f;
 import fun.wonderful.api.QClient;
+import fun.wonderful.api.utils.color.ColorUtils;
 import fun.wonderful.api.utils.render.blur.BlurProgram;
+import net.minecraft.util.math.RotationAxis;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 import java.util.UUID;
 
 /**
@@ -428,5 +433,72 @@ public class RenderUtils implements QClient {
 
     public void drawBlur(MatrixStack matrices, float x, float y, float width, float height, float radius, float blurStrength, int color) {
         drawBlur(matrices, x, y, width, height, radius, radius, radius, radius, blurStrength, color);
+    }
+
+    // ============================================================
+    // Молнии и свечение
+    // ============================================================
+
+    /** Радиальное свечение: мягкий цветной ореол вокруг точки. */
+    public void drawGlow(MatrixStack matrices, float cx, float cy, float radius, int color) {
+        drawShadow(matrices, cx - radius, cy - radius, radius * 2f, radius * 2f,
+                radius, radius * 0.9f, color, color, color, color);
+    }
+
+    /**
+     * Реалистичная молния: ломаная midpoint-displacement между двумя точками,
+     * три прохода — широкое свечение, цветное тело и яркое белое ядро.
+     * seed управляет формой: меняя его раз в ~60 мс, получаем живое мерцание.
+     */
+    public void drawLightning(MatrixStack matrices, float x1, float y1, float x2, float y2,
+                              float width, float jitter, int color, long seed) {
+        List<float[]> pts = new ArrayList<>();
+        Random random = new Random(seed);
+        pts.add(new float[]{x1, y1});
+        pts.add(new float[]{x2, y2});
+        float j = jitter;
+        for (int depth = 0; depth < 5; depth++) {
+            List<float[]> next = new ArrayList<>();
+            for (int i = 0; i < pts.size() - 1; i++) {
+                float[] a = pts.get(i);
+                float[] b = pts.get(i + 1);
+                next.add(a);
+                float dx = b[0] - a[0];
+                float dy = b[1] - a[1];
+                float len = (float) Math.sqrt(dx * dx + dy * dy);
+                if (len > 0.001f) {
+                    float off = (random.nextFloat() * 2f - 1f) * j * (len / 48f);
+                    next.add(new float[]{(a[0] + b[0]) / 2f - dy / len * off,
+                            (a[1] + b[1]) / 2f + dx / len * off});
+                }
+            }
+            next.add(pts.get(pts.size() - 1));
+            pts = next;
+            j *= 0.52f;
+        }
+
+        strokeLightning(matrices, pts, width * 3.6f, ColorUtils.applyAlpha(color, 0.10f));
+        strokeLightning(matrices, pts, width * 1.8f, ColorUtils.applyAlpha(color, 0.38f));
+        strokeLightning(matrices, pts, width,
+                ColorUtils.applyAlpha(ColorUtils.interpolateColor(color, 0xFFFFFFFF, 0.72f), 0.9f));
+    }
+
+    /** Рисует ломаную серией повёрнутых капсул (rounded-rect). */
+    private void strokeLightning(MatrixStack matrices, List<float[]> pts, float width, int color) {
+        if (width <= 0.2f) return;
+        for (int i = 0; i < pts.size() - 1; i++) {
+            float[] a = pts.get(i);
+            float[] b = pts.get(i + 1);
+            float dx = b[0] - a[0];
+            float dy = b[1] - a[1];
+            float len = (float) Math.sqrt(dx * dx + dy * dy);
+            if (len < 0.05f) continue;
+            float ang = (float) Math.toDegrees(Math.atan2(dy, dx));
+            matrices.push();
+            matrices.translate(a[0], a[1], 0f);
+            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(ang));
+            drawRoundedRect(matrices, 0f, -width / 2f, len, width, width / 2f, color);
+            matrices.pop();
+        }
     }
 }
