@@ -13,7 +13,6 @@ import fun.wonderful.client.modules.impl.combat.Triggerbot;
 import fun.wonderful.client.modules.impl.combat.Velocity;
 import fun.wonderful.client.modules.impl.misc.NoDelay;
 import fun.wonderful.client.modules.impl.movement.GrimNoFall;
-import fun.wonderful.client.modules.impl.movement.NoSlow;
 import fun.wonderful.client.modules.impl.movement.Sprint;
 import fun.wonderful.client.modules.impl.player.AutoEat;
 import fun.wonderful.client.modules.impl.player.FastPlace;
@@ -44,7 +43,6 @@ public class ModuleStorage implements QClient {
 
         // ===== Movement =====
         list.add(Sprint.INSTANCE);
-        list.add(NoSlow.INSTANCE);
         list.add(GrimNoFall.INSTANCE);
         list.add(new TestModules.Speed());
         list.add(new TestModules.Flight());

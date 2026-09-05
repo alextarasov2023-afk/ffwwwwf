@@ -79,7 +79,6 @@ public class LocalizationStorage {
         add("ItemESP", "Item ESP", "ESP предметів");
         add("Tracer", "Tracer", "Трейсер");
         add("Velocity", "Velocity", "Велосіті");
-        add("NoSlow", "No Slow", "Без уповільнення");
         add("AutoEat", "Auto Eat", "Авто їжа");
         add("FastPlace", "Fast Place", "Быстре розміщення");
         add("Sprint", "Sprint", "Спринт");
