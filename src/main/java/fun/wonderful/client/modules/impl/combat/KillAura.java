@@ -282,10 +282,10 @@ public class KillAura extends Module {
         // Reach-лимит: сервер считает дистанцию от глаз до ближайшей точки хитбокса.
         // Ваниль = 3.0; бьём только если реально достаём (с запасом) — иначе флаг античита.
         Vec3d eye = mc.player.getEyePos();
-        Box box = target.getBoundingBox();
-        double dx = Math.max(Math.max(box.minX - eye.x, 0.0), eye.x - box.maxX);
-        double dy = Math.max(Math.max(box.minY - eye.y, 0.0), eye.y - box.maxY);
-        double dz = Math.max(Math.max(box.minZ - eye.z, 0.0), eye.z - box.maxZ);
+        Box hitBox = target.getBoundingBox();
+        double dx = Math.max(Math.max(hitBox.minX - eye.x, 0.0), eye.x - hitBox.maxX);
+        double dy = Math.max(Math.max(hitBox.minY - eye.y, 0.0), eye.y - hitBox.maxY);
+        double dz = Math.max(Math.max(hitBox.minZ - eye.z, 0.0), eye.z - hitBox.maxZ);
         if (Math.sqrt(dx * dx + dy * dy + dz * dz) > 2.97) return false;
         boolean isMace = mc.player.getMainHandStack().getItem() instanceof MaceItem;
         if (!canCritHit(isMace)) return false;
