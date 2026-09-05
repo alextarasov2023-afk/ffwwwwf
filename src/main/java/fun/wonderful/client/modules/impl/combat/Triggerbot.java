@@ -53,6 +53,11 @@ public class Triggerbot extends Module {
 
     public final BooleanSetting smartCritical = new BooleanSetting("Умные криты", false);
 
+    public Triggerbot() {
+        super("Triggerbot", "Бьёт цель под прицелом: криты, сброс спринта, умный кулдаун", ModuleCategory.COMBAT);
+        addSettings(attack, onlyCritical, smartCritical);
+    }
+
     // ===== CooldownClicker =====
 
     private long lastClickTime = System.currentTimeMillis();
