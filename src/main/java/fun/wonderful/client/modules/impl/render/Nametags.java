@@ -38,6 +38,7 @@ public class Nametags extends Module {
     private final BooleanSetting showDist = new BooleanSetting("Дистанция", true);
     private final FloatSetting maxDist = new FloatSetting("МаксДистанция", 64f, 8f, 256f, 4f);
     private final BooleanSetting shadowEnabled = new BooleanSetting("Тень", true);
+    private final FloatSetting scale = new FloatSetting("Масштаб", 1f, 0.7f, 1.6f, 0.05f);
 
     private final List<NametagData> nametags = new ArrayList<>();
 
@@ -57,7 +58,7 @@ public class Nametags extends Module {
 
     public Nametags() {
         super("Nametags", "Красивые ники игроков в стиле клик-гуи", ModuleCategory.RENDER);
-        addSettings(yOffset, health, ping, showDist, maxDist, shadowEnabled);
+        addSettings(yOffset, health, ping, showDist, maxDist, shadowEnabled, scale);
     }
 
     @EventLink(priority = Priority.HIGH)
@@ -126,16 +127,17 @@ public class Nametags extends Module {
 
         DrawContext ctx = event.getContext();
         MatrixStack ms = ctx.getMatrices();
-        Font nameFont = Fonts.getFont("suisse", 12);
-        Font small = Fonts.getFont("suisse", 9);
+        float sc = scale.get();
+        Font nameFont = Fonts.getFont("suisse", Math.max(8, Math.round(12f * sc)));
+        Font small = Fonts.getFont("suisse", Math.max(8, Math.round(9f * sc)));
         if (nameFont == null || small == null) return;
 
         // Компактная панель; все элементы выровнены по одной вертикальной оси
-        float headSize = 12f;
-        float padding = 6f;
-        float gap = 5f;
-        float panelH = 22f;
-        float radius = 6f;
+        float headSize = 12f * sc;
+        float padding = 6f * sc;
+        float gap = 5f * sc;
+        float panelH = 22f * sc;
+        float radius = 6f * sc;
 
         for (NametagData data : nametags) {
             float nameW = nameFont.getWidth(data.formattedName);
@@ -143,8 +145,8 @@ public class Nametags extends Module {
             // HP-секция: [сердце] [число]
             boolean showHp = health.isState();
             String hpStr = showHp ? String.valueOf(data.healthDisplay) : "";
-            float hpIconSize = 8f;
-            float hpIconGap = 3.5f;
+            float hpIconSize = 8f * sc;
+            float hpIconGap = 3.5f * sc;
             float hpW = showHp ? hpIconSize + hpIconGap + nameFont.getWidth(hpStr) : 0f;
 
             // Инфо-строка справа: "45ms  12m"
@@ -163,8 +165,8 @@ public class Nametags extends Module {
             // Единая центральная ось для головы, текста и иконок
             float cy = panelY + panelH / 2f;
             // Текст — по целым пикселям: чёткая, ровная строка без дрожания
-            float nameTy = Math.round(cy - 12f * 0.4023f / 2f);
-            float smallTy = Math.round(cy - 9f * 0.4023f / 2f);
+            float nameTy = Math.round(cy - 12f * sc * 0.4023f / 2f);
+            float smallTy = Math.round(cy - 9f * sc * 0.4023f / 2f);
 
             if (shadowEnabled.isState()) {
                 RenderUtils.drawShadow(ms, panelX, panelY, panelW, panelH, radius, 8f,

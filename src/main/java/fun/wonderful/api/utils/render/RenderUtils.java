@@ -489,16 +489,22 @@ public class RenderUtils implements QClient {
         for (int i = 0; i < pts.size() - 1; i++) {
             float[] a = pts.get(i);
             float[] b = pts.get(i + 1);
-            float dx = b[0] - a[0];
-            float dy = b[1] - a[1];
-            float len = (float) Math.sqrt(dx * dx + dy * dy);
-            if (len < 0.05f) continue;
-            float ang = (float) Math.toDegrees(Math.atan2(dy, dx));
-            matrices.push();
-            matrices.translate(a[0], a[1], 0f);
-            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(ang));
-            drawRoundedRect(matrices, 0f, -width / 2f, len, width, width / 2f, color);
-            matrices.pop();
+            drawLine(matrices, a[0], a[1], b[0], b[1], width, color);
         }
+    }
+
+    /** Тонкая линия между двумя точками (повёрнутая капсула со скруглением). */
+    public void drawLine(MatrixStack matrices, float x1, float y1, float x2, float y2,
+                         float width, int color) {
+        float dx = x2 - x1;
+        float dy = y2 - y1;
+        float len = (float) Math.sqrt(dx * dx + dy * dy);
+        if (len < 0.05f) return;
+        float ang = (float) Math.toDegrees(Math.atan2(dy, dx));
+        matrices.push();
+        matrices.translate(x1, y1, 0f);
+        matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(ang));
+        drawRoundedRect(matrices, 0f, -width / 2f, len, width, width / 2f, color);
+        matrices.pop();
     }
 }

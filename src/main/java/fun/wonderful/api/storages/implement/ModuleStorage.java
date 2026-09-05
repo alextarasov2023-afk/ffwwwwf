@@ -17,7 +17,9 @@ import fun.wonderful.client.modules.impl.movement.NoSlow;
 import fun.wonderful.client.modules.impl.movement.Sprint;
 import fun.wonderful.client.modules.impl.player.AutoEat;
 import fun.wonderful.client.modules.impl.player.FastPlace;
+import fun.wonderful.client.modules.impl.render.Esp;
 import fun.wonderful.client.modules.impl.render.FreeLook;
+import fun.wonderful.client.modules.impl.render.Keystrokes;
 import fun.wonderful.client.modules.impl.render.Nametags;
 import fun.wonderful.client.modules.impl.render.SwingAnimations;
 
@@ -62,6 +64,8 @@ public class ModuleStorage implements QClient {
 
         // ===== Render =====
         list.add(Nametags.INSTANCE);
+        list.add(Keystrokes.INSTANCE);
+        list.add(Esp.INSTANCE);
         list.add(FreeLook.INSTANCE);
         list.add(SwingAnimations.INSTANCE);
         list.add(new TestModules.Chams());
