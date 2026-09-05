@@ -3,204 +3,247 @@ package fun.wonderful.client.modules.impl.combat;
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.decoration.ArmorStandEntity;
+import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.util.Hand;
+import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
-import net.minecraft.item.MaceItem;
-import net.minecraft.item.ItemStack;
 
 import fun.wonderful.api.events.EventLink;
-import fun.wonderful.api.events.implement.EventMoveInput;
 import fun.wonderful.api.events.implement.EventUpdate;
 import fun.wonderful.client.modules.Module;
 import fun.wonderful.client.modules.settings.implement.BooleanSetting;
-import fun.wonderful.client.modules.settings.implement.FloatSetting;
-import fun.wonderful.client.modules.settings.implement.ModeSetting;
-import fun.wonderful.api.storages.implement.RotationStorage;
+import fun.wonderful.client.modules.settings.implement.ListSetting;
 
+/**
+ * TriggerBot: бьёт то, что под прицелом (ванильный crosshairTarget).
+ * <p>
+ * Логика (порт):
+ * <ul>
+ *   <li>CooldownClicker — двойной гейт: минимум 230 мс между удаарами И
+ *       прогресс кулдауна атаки >= 0.92;</li>
+ *   <li>предикт крита: заранее сбрасывает спринт, пока цель приближается
+ *       к прицелу (луч 3.2), — к моменту удара сервер уже видел сброс;</li>
+ *   <li>SprintControl — трекинг серверного спринта и восстановление
+ *       клавиши спринта после сброса;</li>
+ *   <li>«Только криты» / «Умные криты» (чередование крит/удар на земле),
+ *     полный чек движенческих ограничений (слепота, левитация, паутина,
+ *     вода, лава, лазание, полёт);</li>
+ *   <li>выбор целей: игроки / мобы / животные / стойки брони.</li>
+ * </ul>
+ */
 public class Triggerbot extends Module {
 
     public static Triggerbot INSTANCE = new Triggerbot();
 
-    public final FloatSetting reach = new FloatSetting("Дистанция", 3.0f, 1.0f, 3.4f, 0.05f);
-    public final ModeSetting critMode = new ModeSetting("Крит", "Smart Crit", "Smart Crit", "Only Crit", "Off");
-    public final BooleanSetting sprintReset = new BooleanSetting("Сброс спринта", true);
-    public final BooleanSetting noEatAttack = new BooleanSetting("Не атаковать когда ешь", true);
-    public final BooleanSetting onlyPlayers = new BooleanSetting("Только игроки", false);
-    public final BooleanSetting throughWalls = new BooleanSetting("Сквозь стены", false);
+    // ===== Настройки =====
 
-    private boolean needSprintReset = false;
-    private boolean sprintResetDone = false;
-    /** Осталось тиков сброса спринта (2 базовых + случайные 1..3). */
-    private int sprintResetTicksLeft = 0;
+    public final ListSetting attack = new ListSetting("Атаковать",
+            new BooleanSetting("Игроки", true),
+            new BooleanSetting("Мобы", true),
+            new BooleanSetting("Животные", true),
+            new BooleanSetting("Стойки", true));
 
-    private int lastAttackTick = -100;
-    private int currentTick = 0;
-    private int landedTicks = 0;
+    public final BooleanSetting onlyCritical = new BooleanSetting("Только криты", true);
 
-    private Entity lastTarget;
-    public Entity getLastTarget() { return lastTarget; }
+    public final BooleanSetting smartCritical = new BooleanSetting("Умные криты", false);
 
+    // ===== CooldownClicker =====
 
-    public Triggerbot() {
-        super("Triggerbot", "Автоматически атакует цель при наведении", ModuleCategory.COMBAT);
-        addSettings(reach, critMode, sprintReset, noEatAttack, onlyPlayers, throughWalls);
+    private long lastClickTime = System.currentTimeMillis();
+
+    private boolean cooldownPassed() {
+        if (System.currentTimeMillis() - lastClickTime < 230L) return false;
+        return mc.player.getAttackCooldownProgress(1.0f) >= 0.92f;
     }
 
-    @Override
-    public void onDisable() {
-        needSprintReset = false;
-        sprintResetDone = false;
-        sprintResetTicksLeft = 0;
-        landedTicks = 0;
-        lastTarget = null;
-        RotationStorage.instance.stopRotation();
-        super.onDisable();
+    private void resetClickTime() {
+        lastClickTime = System.currentTimeMillis();
     }
+
+    // ===== SprintControl =====
+
+    /**
+     * Серверный спринт: ваниль шлёт START/STOP_SPRINTING по факту
+     * isSprinting() в конце прошлого тика — снимаем значение в начале тика.
+     */
+    private boolean serverSprint;
+
+    /** Тиков ещё держать сброс спринта. */
+    private int sprintResetTicks;
+
+    /** Сброс был выполнен и клавишу спринта нужно восстановить. */
+    private boolean hasReset;
+
+    private void sprintControlTick() {
+        serverSprint = mc.player.isSprinting();
+        if (sprintResetTicks > 0) {
+            hasReset = true;
+            mc.player.setSprinting(false);
+            sprintResetTicks--;
+        } else if (hasReset) {
+            mc.options.sprintKey.setPressed(true);
+            mc.player.setSprinting(true);
+            hasReset = false;
+        }
+    }
+
+    private void restoreSprint() {
+        if (hasReset) {
+            mc.options.sprintKey.setPressed(true);
+            mc.player.setSprinting(true);
+            hasReset = false;
+        }
+        sprintResetTicks = 0;
+    }
+
+    // ===== AttackCritical =====
+
+    /** Заблаговременный сброс спринта: к моменту удара сервер уже не видит спринт. */
+    private void preCritical() {
+        if (mc.player.isSprinting()) {
+            sprintResetTicks = 1;
+            mc.options.sprintKey.setPressed(false);
+            mc.player.setSprinting(false);
+        }
+    }
+
+    /** Спринт ли видит сервер прямо сейчас (для валидации крит-удара). */
+    private boolean isServerSprinting() {
+        return serverSprint
+                && !mc.player.isGliding()
+                && !mc.player.isTouchingWater();
+    }
+
+    // ===== TriggerClicker =====
+
+    private boolean canAttack() {
+        if (!cooldownPassed()) return false;
+
+        boolean noRestrict = !hasMovementRestrictions();
+
+        if (smartCritical.isState() && onlyCritical.isState()) {
+            // Умные + только криты: чередуем крит и удар на земле;
+            // при ограничениях (вода/паутина/слепота…) крит невозможен — бьём как есть
+            if (noRestrict) {
+                return canCrit() || mc.player.isOnGround();
+            }
+            return true;
+        }
+
+        if (onlyCritical.isState() && noRestrict) {
+            return canCrit();
+        }
+        return true;
+    }
+
+    private boolean hasMovementRestrictions() {
+        return mc.player.hasStatusEffect(StatusEffects.BLINDNESS)
+                || mc.player.hasStatusEffect(StatusEffects.LEVITATION)
+                || isInCobweb()
+                || mc.player.isSubmergedInWater()
+                || mc.player.isInLava()
+                || mc.player.isClimbing()
+                || mc.player.getAbilities().flying;
+    }
+
+    private boolean canCrit() {
+        return !mc.player.isOnGround() && mc.player.fallDistance > 0f;
+    }
+
+    /** Только оторвались от земли: дистанция падения ещё не накоплена. */
+    private boolean hasDistanceFix() {
+        return !mc.player.isOnGround() && mc.player.fallDistance < 0.0001f;
+    }
+
+    private void onAttackEntity(Entity entity) {
+        if (canAttack() || hasDistanceFix()) {
+            preCritical();
+        }
+
+        if (!canAttack()) return;
+
+        // Бьём только когда сервер уже не видит спринта — удар считается критом
+        if (!isServerSprinting()) {
+            attack(entity);
+        }
+    }
+
+    private void attack(Entity entity) {
+        resetClickTime();
+
+        mc.interactionManager.attackEntity(mc.player, entity);
+        mc.player.swingHand(Hand.MAIN_HAND);
+    }
+
+    // ===== TargetFinder =====
+
+    /** Цель под ванильным прицелом (crosshairTarget) с фильтром по типам. */
+    private Entity getCrossTarget() {
+        if (mc.crosshairTarget instanceof EntityHitResult hitResult) {
+            Entity entity = hitResult.getEntity();
+            if (entity instanceof LivingEntity le && !le.isRemoved() && le.isAlive()
+                    && hasAccessTarget(entity)) {
+                return entity;
+            }
+        }
+        return null;
+    }
+
+    private boolean hasAccessTarget(Entity entity) {
+        if (attack.is("Игроки") && entity instanceof PlayerEntity && entity != mc.player) return true;
+        if (attack.is("Мобы") && entity instanceof MobEntity) return true;
+        if (attack.is("Животные") && entity instanceof AnimalEntity) return true;
+        return attack.is("Стойки") && entity instanceof ArmorStandEntity;
+    }
+
+    // ===== Тик =====
 
     @EventLink
     public void onUpdate(EventUpdate event) {
         if (mc.player == null || mc.world == null) return;
-        // Не атакуем вдвоём с KillAura — двойная атака в один тик = мгновенный флаг античита
+        // Не работаем вдвоём с KillAura — двойной удар в один тик = флаг античита
         if (KillAura.INSTANCE.isEnable()) return;
-        currentTick++;
 
-        if (mc.player.isOnGround()) {
-            landedTicks++;
-        }
+        sprintControlTick();
 
-        if (currentTick - lastAttackTick < 5) return;
-
-        if (noEatAttack.isState() && mc.player.isUsingItem()) {
-            ItemStack stack = mc.player.getMainHandStack();
-            if (stack.getItem().getComponents().contains(net.minecraft.component.DataComponentTypes.FOOD) ||
-                stack.getItem().getComponents().contains(net.minecraft.component.DataComponentTypes.CONSUMABLE)) {
-                return;
-            }
-        }
-
-        Entity target = findTarget();
-        if (target == null) {
-            needSprintReset = false;
-            sprintResetDone = false;
-            return;
-        }
-
-        boolean isMace = mc.player.getMainHandStack().getItem() instanceof MaceItem;
-
-        if (!canCritHit(target, isMace)) return;
-
-        boolean shouldResetSprint = sprintReset.isState() && !isMace && mc.player.isSprinting();
-        if (shouldResetSprint && !needSprintReset && !sprintResetDone) {
-            needSprintReset = true;
-            sprintResetTicksLeft = 2 + java.util.concurrent.ThreadLocalRandom.current().nextInt(1, 4);
-            return;
-        }
-
-        // Держим паузу без движения всю длительность, затем бьём
-        if (needSprintReset && !sprintResetDone) return;
-
-        attack(target);
-    }
-
-    @EventLink
-    public void onMoveInput(EventMoveInput event) {
-        if (needSprintReset && !sprintResetDone) {
-            event.setForward(0f);
-            event.setStrafe(0f);
-            event.setJump(false);
-            // Каждый тик паузы гасим движение; отсчитав 2+1..3 тика — отпускаем
-            if (--sprintResetTicksLeft <= 0) {
-                needSprintReset = false;
-                sprintResetDone = true;
-            }
-        }
-    }
-
-    private Entity findTarget() {
-        if (mc.player == null || mc.world == null) return null;
-
+        // Предикт: цель приближается к прицелу (луч 3.2) — сбрасываем спринт заранее,
+        // чтобы к моменту реального удара сервер уже обработал STOP_SPRINTING
         Vec3d eyePos = mc.player.getEyePos();
         Vec3d lookVec = mc.player.getRotationVec(1.0f);
-        double dist = reach.get();
-        Vec3d endPos = eyePos.add(lookVec.x * dist, lookVec.y * dist, lookVec.z * dist);
-
-        Entity closest = null;
-        double closestDist = dist;
-
+        Vec3d endPos = eyePos.add(lookVec.x * 3.2, lookVec.y * 3.2, lookVec.z * 3.2);
         for (Entity entity : mc.world.getEntities()) {
             if (entity == mc.player) continue;
             if (!(entity instanceof LivingEntity)) continue;
-            if (entity.isRemoved() || ((LivingEntity) entity).getHealth() <= 0) continue;
-
-            if (onlyPlayers.isState() && !(entity instanceof PlayerEntity)) continue;
-
-            Box box = entity.getBoundingBox().expand(0.1);
-            if (box.contains(eyePos)) continue;
-
-            if (!throughWalls.isState() && !mc.player.canSee(entity)) continue;
-
-            if (box.raycast(eyePos, endPos).isPresent()) {
-                // Reach-лимит: реальная дистанция от глаз до ближайшей точки хитбокса
-                // (ваниль 3.0, с запасом) — дальше не бьём, иначе флаг античита
-                double dx = Math.max(Math.max(box.minX - eyePos.x, 0.0), eyePos.x - box.maxX);
-                double dy = Math.max(Math.max(box.minY - eyePos.y, 0.0), eyePos.y - box.maxY);
-                double dz = Math.max(Math.max(box.minZ - eyePos.z, 0.0), eyePos.z - box.maxZ);
-                double boxDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                if (boxDist <= 2.97 && boxDist < closestDist) {
-                    closest = entity;
-                    closestDist = boxDist;
-                }
+            if (entity.getBoundingBox().raycast(eyePos, endPos).isEmpty()) continue;
+            if (!hasAccessTarget(entity)) continue;
+            if (canAttack() || hasDistanceFix()) {
+                preCritical();
             }
-        }
-        return closest;
-    }
-
-    private boolean canCritHit(Entity target, boolean isMace) {
-        float cooldown = mc.player.getAttackCooldownProgress(0.5f);
-        boolean inWeb = isInCobweb();
-        boolean inWater = mc.player.isTouchingWater() || mc.player.isSubmergedInWater();
-        boolean blind = mc.player.hasStatusEffect(StatusEffects.BLINDNESS);
-        boolean forcedAttack = inWeb || inWater || blind;
-        boolean falling = !inWeb && isCritFalling();
-        float cooldownThreshold = 0.848f;
-        // Булава: бьём только при остатке кулдауна < 7.5% (прогресс >= 0.925)
-        float maceThreshold = 0.925f;
-        String mode = critMode.getCurrent();
-
-        if (isMace) return cooldown >= maceThreshold;
-        if (forcedAttack) return cooldown >= 0.96f;
-
-        if ("Only Crit".equals(mode)) {
-            if (!falling) return false;
-            if (landedTicks < 1) return false;
-            return cooldown >= cooldownThreshold;
+            break;
         }
 
-        if ("Smart Crit".equals(mode)) {
-            if (falling) {
-                if (landedTicks < 1) return false;
-                return cooldown >= cooldownThreshold;
-            } else {
-                // На земле — не бьём если зажат пробел (игрок прыгает для крита)
-                if (mc.options.jumpKey.isPressed()) return false;
-                if (landedTicks < 1) return false;
-                return cooldown >= 0.96f;
-            }
+        Entity target = getCrossTarget();
+        if (target != null) {
+            onAttackEntity(target);
         }
-
-        return cooldown >= cooldownThreshold;
     }
 
-    private boolean isCritFalling() {
-        if (mc.player.isOnGround()) return false;
-        if (mc.player.isTouchingWater() || mc.player.isSubmergedInWater()) return false;
-        if (mc.player.isClimbing()) return false;
-        return mc.player.getVelocity().y < -0.08;
+    @Override
+    public void onDisable() {
+        if (mc.player != null) {
+            restoreSprint();
+        }
+        resetClickTime();
+        super.onDisable();
     }
+
+    // ===== Утилиты =====
 
     private boolean isInCobweb() {
         Box box = mc.player.getBoundingBox();
@@ -214,15 +257,5 @@ public class Triggerbot extends Module {
             }
         }
         return false;
-    }
-
-    private void attack(Entity target) {
-        mc.interactionManager.attackEntity(mc.player, target);
-        mc.player.swingHand(Hand.MAIN_HAND);
-        lastAttackTick = currentTick;
-        lastTarget = target;
-        landedTicks = 0;
-        sprintResetDone = false;
-        needSprintReset = false;
     }
 }
