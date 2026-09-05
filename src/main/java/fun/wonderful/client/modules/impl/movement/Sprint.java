@@ -68,14 +68,20 @@ public class Sprint extends Module {
         }
 
         boolean inWater = mc.player.isTouchingWater() || mc.player.isSubmergedInWater();
-        boolean shouldSprint = pauseDepth == 0
+        // Связь с комбатом: пока KillAura/Triggerbot сбрасывают спринт для
+        // крита — не форсим спринт обратно, иначе сброс никогда не сработает
+        boolean combatSprintReset = fun.wonderful.client.modules.impl.combat.KillAura.isBlockingSprint()
+                || fun.wonderful.client.modules.impl.combat.Triggerbot.isBlockingSprint();
+
+        boolean shouldSprint = !combatSprintReset
+                && pauseDepth == 0
                 && System.currentTimeMillis() >= time
                 && sprinting
                 && MoveUtils.isMoving()
                 && mc.player.input.movementForward > 0.0F
                 && !mc.player.isGliding();
 
-        if (keepInWater.isState() && inWater && mc.player.isSprinting()) {
+        if (!combatSprintReset && keepInWater.isState() && inWater && mc.player.isSprinting()) {
             shouldSprint = true;
         }
 

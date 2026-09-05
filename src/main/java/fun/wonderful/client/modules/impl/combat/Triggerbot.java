@@ -78,7 +78,7 @@ public class Triggerbot extends Module {
 
     private boolean cooldownPassed() {
         if (System.currentTimeMillis() - lastClickTime < 230L) return false;
-        return mc.player.getAttackCooldownProgress(1.0f) >= 0.92f;
+        return mc.player.getAttackCooldownProgress(1.0f) >= 0.85f;
     }
 
     private void resetClickTime() {
@@ -189,7 +189,8 @@ public class Triggerbot extends Module {
         if (boxDistance(entity) > reach.get()) return;
 
         // Packet: в падении бьём сразу — всегда крит, без остановки и сброса спринта
-        if (isPacketSprint() && canCrit()) {
+        // (кулдаун всё равно уважаем — иначе удар улетал бы каждый тик)
+        if (isPacketSprint() && canCrit() && cooldownPassed()) {
             attack(entity);
             return;
         }
@@ -212,6 +213,16 @@ public class Triggerbot extends Module {
         if (!isServerSprinting()) {
             attack(entity);
         }
+    }
+
+    /**
+     * Связь с модулем Sprint: пока Triggerbot держит сброс спринта,
+     * автоспринт не должен форсить спринт обратно.
+     */
+    public static boolean isBlockingSprint() {
+        Triggerbot t = INSTANCE;
+        return t != null && t.isEnable()
+                && (t.sprintResetTicks > 0 || t.hasReset);
     }
 
     private boolean isPacketSprint() {

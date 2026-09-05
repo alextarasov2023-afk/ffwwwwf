@@ -74,6 +74,12 @@ public class KillAura extends Module {
     }
 
     private AuraState state = AuraState.IDLE;
+
+    /** Связь с модулем Sprint: фаза сброса спринта — автоспринт не мешает. */
+    public static boolean isBlockingSprint() {
+        KillAura ka = INSTANCE;
+        return ka != null && ka.isEnable() && ka.state == AuraState.SPRINT_RESET;
+    }
     private int stateTicks;
     private int lastAttackTick = -100;
     private int lastJumpTick = -100;
