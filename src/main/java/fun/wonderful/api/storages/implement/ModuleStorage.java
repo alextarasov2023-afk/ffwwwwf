@@ -17,8 +17,6 @@ import fun.wonderful.client.modules.impl.movement.Sprint;
 import fun.wonderful.client.modules.impl.player.AutoEat;
 import fun.wonderful.client.modules.impl.player.FastPlace;
 import fun.wonderful.client.modules.impl.render.FreeLook;
-import fun.wonderful.client.modules.impl.render.Nametags;
-import fun.wonderful.client.modules.impl.render.SwingAnimations;
 
 @Getter
 @Setter
@@ -26,7 +24,6 @@ public class ModuleStorage implements QClient {
 
     public ModuleStorage() {
         this.initModules();
-        this.initWatermark();
     }
 
     private void initModules() {
@@ -59,20 +56,8 @@ public class ModuleStorage implements QClient {
         list.add(new TestModules.NameProtect());
 
         // ===== Render =====
-        list.add(Nametags.INSTANCE);
         list.add(FreeLook.INSTANCE);
-        list.add(SwingAnimations.INSTANCE);
-        list.add(new TestModules.Chams());
-        list.add(new TestModules.TargetEsp());
-        list.add(new TestModules.Watermark());
-        list.add(new TestModules.TargetHud());
 
         ModuleClass.INSTANCE.initialize();
-    }
-
-    private void initWatermark() {
-        new WatermarkStorage();
-        new TargetHudStorage();
-        new TargetEspStorage();
     }
 }

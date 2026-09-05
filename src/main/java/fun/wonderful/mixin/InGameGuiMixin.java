@@ -18,7 +18,7 @@ public class InGameGuiMixin {
     private void wonderful$onRender(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         if (Wonderful.INSTANCE != null && Wonderful.isReady()) {
             // Обновляем kawase-блюр ДО отрисовки HUD: drawBlur-потребители (GUI,
-            // Nametags, Watermark, Target HUD) требуют готовые буферы BlurProgram.
+            // GUI и уведомления требуют готовые буферы BlurProgram.
             // Без этого вызова blur-проходы никогда не выполнялись и блюр молча не работал.
             BlurProgram.getInstance().beginFrame();
             new EventRender.Default(context, tickCounter.getTickDelta(false)).call();

@@ -62,7 +62,6 @@ public class LocalizationStorage {
         add("FullBright", "Full Bright", "Повна яскравість");
         add("ElytraSwap", "Elytra Swap", "Свап елітр");
         add("PlayerFakeLags", "Fake Lag", "Фейк лаг");
-        add("Chams", "Chams", "Чамси");
         add("ClientSounds", "Client Sounds", "Звуки клієнта");
         add("Cosmetics", "Cosmetics", "Косметика");
         add("ServerHelper", "Server Helper", "Сервер Хелпер");
@@ -90,18 +89,14 @@ public class LocalizationStorage {
         add("NoWeb", "No Web", "Без павутини");
         add("BlockESP", "Block ESP", "ESP блоків");
         add("ChestESP", "Chest ESP", "ESP сундуків");
-        add("Nametags", "Nametags", "Неймтеги");
         add("BlockOutline", "Block Outline", "Контур блоків");
         add("NoRender", "No Render", "Без рендеру");
         add("Zoom", "Zoom", "Зум");
         add("Freelook", "Freelook", "Вільний огляд");
         add("CrystalESP", "Crystal ESP", "ESP кристалів");
-        add("Chams", "Chams", "Чамси");
         add("Cubes", "Cubes", "Куби");
         add("Removals", "Removals", "Видалення");
-        add("SwingAnimations", "Swing Animations", "Анімації свінгу");
         add("ViewModel", "View Model", "Модель рук");
-        add("TargetESP", "Target ESP", "ESP цілі");
         add("JumpCircle", "Jump Circle", "Коло стрибка");
         add("CustomWorld", "Custom World", "Світ");
         add("InterpolateF5", "Interpolate F5", "Плавний F5");
@@ -124,7 +119,6 @@ public class LocalizationStorage {
         add("Плавность", "Smoothness", "Плавність");
         add("Анимация", "Animation", "Анімація");
         add("Анимация крыльев", "Wing Animation", "Анімація крил");
-        add("Анимация свинга", "Swing Animation", "Анімація свінгу");
         add("Плавная анимация", "Smooth Animation", "Плавна анімація");
         add("Тип частиц", "Particle Type", "Тип частинок");
         add("Количество", "Count", "Кількість");
@@ -134,8 +128,6 @@ public class LocalizationStorage {
         add("Сервер", "Server", "Сервер");
         add("После лута", "After Loot", "Після луту");
         add("Элементы", "Elements", "Елементи");
-        add("Ватермарка", "Watermark", "Ватермарка");
-        add("Аррай лист", "Array List", "Список модулів");
         add("Горячие клавиши", "Key Binds", "Гарячі клавіші");
         add("Зелья", "Potions", "Зілля");
         add("Таргет худ", "Target HUD", "Таргет HUD");

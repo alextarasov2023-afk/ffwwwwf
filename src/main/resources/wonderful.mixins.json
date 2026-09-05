@@ -13,15 +13,12 @@
   "MouseMixin",
   "EntityLookMixin",
   "CameraMixin",
-  "EntityRenderDispatcherMixin",
   "WorldRendererMixin",
   "ChatScreenMixin",
   "ICameraAccessor",
   "IEntity",
   "IMinecraftClientAccessor",
-  "ILivingEntityAccessor",
-  "HeldItemRendererMixin",
-  "HeldItemRendererInvoker"
+  "ILivingEntityAccessor"
  ],
  "injectors": {
   "defaultRequire": 1
