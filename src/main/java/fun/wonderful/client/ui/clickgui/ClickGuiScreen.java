@@ -234,7 +234,7 @@ public class ClickGuiScreen extends Screen {
         float textX = searchX + 18f;
         float maxTextW = searchW - 26f;
         if (focused) {
-            String shown = ModuleList.filter;
+            String shown = filter;
             while (shown.length() > 1 && ModuleList.tw(11, shown) > maxTextW) {
                 shown = shown.substring(1);
             }
