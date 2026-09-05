@@ -18,7 +18,9 @@ import fun.wonderful.api.events.EventLink;
 import fun.wonderful.api.events.implement.EventUpdate;
 import fun.wonderful.client.modules.Module;
 import fun.wonderful.client.modules.settings.implement.BooleanSetting;
+import fun.wonderful.client.modules.settings.implement.FloatSetting;
 import fun.wonderful.client.modules.settings.implement.ListSetting;
+import fun.wonderful.client.modules.settings.implement.ModeSetting;
 
 /**
  * TriggerBot: бьёт то, что под прицелом (ванильный crosshairTarget).
@@ -49,13 +51,25 @@ public class Triggerbot extends Module {
             new BooleanSetting("Животные", true),
             new BooleanSetting("Стойки", true));
 
-    public final BooleanSetting onlyCritical = new BooleanSetting("Только криты", true);
+    /** Режим критов: умные (чередование крит/земля), только криты, выкл. */
+    public final ModeSetting critMode = new ModeSetting("Криты", "Умные криты",
+            "Умные криты", "Только криты", "Выкл");
 
-    public final BooleanSetting smartCritical = new BooleanSetting("Умные криты", false);
+    /** Дистанция удара: реальное расстояние от глаз до ближайшей точки хитбокса. */
+    public final FloatSetting reach = new FloatSetting("Дистанция", 3.0f, 2.0f, 3.4f, 0.05f);
+
+    /**
+     * Сброс спринта:
+     * Обычный — модуль сам сбрасывает спринт заранее и ждёт подтверждения;
+     * Packet — как обычный, но в падении бьёт сразу критами без остановки;
+     * Легитный — спринт модуль не трогает: пока спринтуешь — не бьёт.
+     */
+    public final ModeSetting sprintMode = new ModeSetting("Сброс спринта", "Обычный",
+            "Обычный", "Packet", "Легитный");
 
     public Triggerbot() {
         super("Triggerbot", "Бьёт цель под прицелом: криты, сброс спринта, умный кулдаун", ModuleCategory.COMBAT);
-        addSettings(attack, onlyCritical, smartCritical);
+        addSettings(attack, critMode, reach, sprintMode);
     }
 
     // ===== CooldownClicker =====
@@ -111,6 +125,7 @@ public class Triggerbot extends Module {
 
     /** Заблаговременный сброс спринта: к моменту удара сервер уже не видит спринт. */
     private void preCritical() {
+        if (isLegitSprint()) return; // легитный режим: спринт не трогаем никогда
         if (mc.player.isSprinting()) {
             sprintResetTicks = 1;
             mc.options.sprintKey.setPressed(false);
@@ -132,19 +147,22 @@ public class Triggerbot extends Module {
 
         boolean noRestrict = !hasMovementRestrictions();
 
-        if (smartCritical.isState() && onlyCritical.isState()) {
-            // Умные + только криты: чередуем крит и удар на земле;
-            // при ограничениях (вода/паутина/слепота…) крит невозможен — бьём как есть
+        if (critMode.is("Умные криты")) {
+            // Чередуем крит и удар на земле; при ограничениях
+            // (вода/паутина/слепота…) крит невозможен — бьём как есть
             if (noRestrict) {
                 return canCrit() || mc.player.isOnGround();
             }
             return true;
         }
 
-        if (onlyCritical.isState() && noRestrict) {
-            return canCrit();
+        if (critMode.is("Только криты")) {
+            // Криты только без ограничений; при ограничениях — обычный удар
+            if (noRestrict) {
+                return canCrit();
+            }
         }
-        return true;
+        return true; // Выкл — бьём по готовности кулдауна
     }
 
     private boolean hasMovementRestrictions() {
@@ -167,16 +185,51 @@ public class Triggerbot extends Module {
     }
 
     private void onAttackEntity(Entity entity) {
+        // Дистанция удара: реальное расстояние от глаз до хитбокса
+        if (boxDistance(entity) > reach.get()) return;
+
+        // Packet: в падении бьём сразу — всегда крит, без остановки и сброса спринта
+        if (isPacketSprint() && canCrit()) {
+            attack(entity);
+            return;
+        }
+
         if (canAttack() || hasDistanceFix()) {
             preCritical();
         }
 
         if (!canAttack()) return;
 
-        // Бьём только когда сервер уже не видит спринта — удар считается критом
+        if (isLegitSprint()) {
+            // Легитный: спринт не сбрасываем — пока спринтуешь, модуль ждёт
+            // (сам остановись или иди ходьбой — тогда ударит)
+            if (mc.player.isSprinting()) return;
+            attack(entity);
+            return;
+        }
+
+        // Обычный/Packet на земле: бьём, когда сервер уже не видит спринта
         if (!isServerSprinting()) {
             attack(entity);
         }
+    }
+
+    private boolean isPacketSprint() {
+        return sprintMode.is("Packet");
+    }
+
+    private boolean isLegitSprint() {
+        return sprintMode.is("Легитный");
+    }
+
+    /** Реальная дистанция от глаз до ближайшей точки хитбокса (как считает сервер). */
+    private double boxDistance(Entity entity) {
+        Vec3d eye = mc.player.getEyePos();
+        Box box = entity.getBoundingBox();
+        double dx = Math.max(Math.max(box.minX - eye.x, 0.0), eye.x - box.maxX);
+        double dy = Math.max(Math.max(box.minY - eye.y, 0.0), eye.y - box.maxY);
+        double dz = Math.max(Math.max(box.minZ - eye.z, 0.0), eye.z - box.maxZ);
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     private void attack(Entity entity) {
@@ -221,16 +274,19 @@ public class Triggerbot extends Module {
         // чтобы к моменту реального удара сервер уже обработал STOP_SPRINTING
         Vec3d eyePos = mc.player.getEyePos();
         Vec3d lookVec = mc.player.getRotationVec(1.0f);
-        Vec3d endPos = eyePos.add(lookVec.x * 3.2, lookVec.y * 3.2, lookVec.z * 3.2);
-        for (Entity entity : mc.world.getEntities()) {
-            if (entity == mc.player) continue;
-            if (!(entity instanceof LivingEntity)) continue;
-            if (entity.getBoundingBox().raycast(eyePos, endPos).isEmpty()) continue;
-            if (!hasAccessTarget(entity)) continue;
-            if (canAttack() || hasDistanceFix()) {
-                preCritical();
+        double ray = reach.get() + 0.2;
+        Vec3d endPos = eyePos.add(lookVec.x * ray, lookVec.y * ray, lookVec.z * ray);
+        if (!isLegitSprint()) {
+            for (Entity entity : mc.world.getEntities()) {
+                if (entity == mc.player) continue;
+                if (!(entity instanceof LivingEntity)) continue;
+                if (entity.getBoundingBox().raycast(eyePos, endPos).isEmpty()) continue;
+                if (!hasAccessTarget(entity)) continue;
+                if (canAttack() || hasDistanceFix()) {
+                    preCritical();
+                }
+                break;
             }
-            break;
         }
 
         Entity target = getCrossTarget();
