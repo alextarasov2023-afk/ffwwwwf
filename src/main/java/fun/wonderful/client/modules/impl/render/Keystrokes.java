@@ -56,7 +56,7 @@ public class Keystrokes extends Module {
         float sc = scale.get();
         float key = KEY * sc;
         float gap = GAP * sc;
-        float ac = ThemePanel.accentSolid();
+        int ac = ThemePanel.accentSolid();
 
         // CPS: считаем передние фронты нажатий, окно 1 секунда
         long now = System.currentTimeMillis();
