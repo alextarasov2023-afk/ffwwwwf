@@ -336,8 +336,8 @@ public class ClickGuiScreen extends Screen {
     }
 
     /** Панель тем поверх, рядом с главной панелью. */
-    private void renderThemePanel(DrawContext context, int mouseX, mouseY, float p) {
-        ThemePanel.updateOpen(dt);
+    private void renderThemePanel(DrawContext context, int mouseX, int mouseY, float p) {
+        ThemePanel.updateOpen();
         if (!ThemePanel.isShown()) return;
 
         float ax = panelX + panelW + 10f;

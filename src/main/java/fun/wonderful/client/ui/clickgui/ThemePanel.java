@@ -63,7 +63,7 @@ public class ThemePanel {
         return open || MathHelper.clamp(openFade.getValue(), 0f, 1f) > 0.02f;
     }
 
-    public static void updateOpen(float dt) {
+    public static void updateOpen() {
         openFade.update(open ? 1f : 0f);
     }
 
