@@ -7,6 +7,7 @@ import fun.wonderful.api.events.EventLink;
 import fun.wonderful.api.events.implement.EventRender;
 import fun.wonderful.api.storages.implement.helpertstorages.enumvar.ModuleClass;
 import fun.wonderful.api.utils.animation.AnimationUtils;
+import fun.wonderful.api.utils.animation.Easing;
 import fun.wonderful.api.utils.animation.Easings;
 import fun.wonderful.api.utils.color.ColorUtils;
 import fun.wonderful.api.utils.math.MathUtils;
@@ -60,7 +61,7 @@ public class HudStorage implements QClient {
         EventInvoker.register(this);
     }
 
-    private AnimationUtils elem(String key, float speed, Easings ease) {
+    private AnimationUtils elem(String key, float speed, Easing ease) {
         return anims.computeIfAbsent(key, k -> new AnimationUtils(0f, speed, ease));
     }
 
