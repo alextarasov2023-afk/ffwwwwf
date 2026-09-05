@@ -16,6 +16,7 @@ import fun.wonderful.api.utils.math.MathUtils;
 import fun.wonderful.api.utils.render.RenderUtils;
 import fun.wonderful.api.utils.render.fonts.msdf.Font;
 import fun.wonderful.api.utils.render.fonts.msdf.Fonts;
+import fun.wonderful.client.ui.clickgui.ThemePanel;
 
 public class WaypointStorage implements QClient {
 
@@ -72,7 +73,7 @@ public class WaypointStorage implements QClient {
         float targetYaw = (float) -Math.toDegrees(Math.atan2(deltaX, deltaZ)) - mc.gameRenderer.getCamera().getYaw();
         animatedYaw = interpolateAngle(animatedYaw, targetYaw, 0.18f);
 
-        int color = ColorUtils.applyAlpha(ColorUtils.getThemeColor(), alpha);
+        int color = ColorUtils.applyAlpha(ThemePanel.accentSolid(), alpha);
 
         Font font = Fonts.getFont("sf_regular", 12);
         if (font != null) {

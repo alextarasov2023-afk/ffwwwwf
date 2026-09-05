@@ -80,8 +80,8 @@ public class NotificationRenderer implements QClient {
     }
 
     private void drawPanel(MatrixStack ms, float x, float y, float w, float h, float alpha) {
-        int acTop = ThemePanel.accent(y + 2f);
-        int acBot = ThemePanel.accent(y + h - 2f);
+        int acTop = ThemePanel.accentSolid();
+        int acBot = ThemePanel.accentSolid();
         int ar = (acTop >> 16) & 0xFF, ag = (acTop >> 8) & 0xFF, ab = acTop & 0xFF;
         int br = (acBot >> 16) & 0xFF, bg = (acBot >> 8) & 0xFF, bb = acBot & 0xFF;
 
@@ -99,7 +99,7 @@ public class NotificationRenderer implements QClient {
 
         // Левая акцентная полоса — как у тултипов клик-гуи
         RenderUtils.drawRoundedRect(ms, x + 4.5f, y + 5f, 2f, h - 10f, 1f,
-                ColorUtils.applyAlpha(ThemePanel.accent(y + h / 2f), 0.9f * alpha));
+                ColorUtils.applyAlpha(ThemePanel.accentSolid(), 0.9f * alpha));
     }
 
     private void drawContent(MatrixStack ms, float x, float y, float w, float h, float padX,
@@ -113,7 +113,7 @@ public class NotificationRenderer implements QClient {
 
         if (!status.isEmpty()) {
             int statusColor = enabled
-                    ? ColorUtils.applyAlpha(ThemePanel.accent(cy), 0.95f * alpha)
+                    ? ColorUtils.applyAlpha(ThemePanel.accentSolid(), 0.95f * alpha)
                     : ColorUtils.rgba(140, 148, 164, (int) (200 * alpha));
             small.draw(ms, status, x + w - padX - small.getWidth(status),
                     cy - 9f * 0.4023f / 2f, statusColor);

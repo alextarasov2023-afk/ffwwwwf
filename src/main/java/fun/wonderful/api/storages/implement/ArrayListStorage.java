@@ -97,7 +97,6 @@ public class ArrayListStorage implements QClient {
         }
 
         MatrixStack ms = event.getContext().getMatrices();
-        float screenH = mc.getWindow().getScaledHeight();
 
         // Раскладка: цель по порядку, текущий Y плывёт к цели (плавная перестановка)
         float targetY = Y0;
@@ -128,13 +127,8 @@ public class ArrayListStorage implements QClient {
             float px = X + (1f - s) * (-(w + 16f));
             float py = l.y + (1f - a) * 4f;
 
-            // Цвет строки — точка в градиенте темы по вертикали экрана
-            int base = ThemePanel.gradient
-                    ? ColorUtils.interpolateColor(
-                            ColorUtils.rgba(ThemePanel.r1, ThemePanel.g1, ThemePanel.b1, 255),
-                            ColorUtils.rgba(ThemePanel.r2, ThemePanel.g2, ThemePanel.b2, 255),
-                            MathHelper.clamp(py / Math.max(1f, screenH), 0f, 1f))
-                    : ColorUtils.rgba(ThemePanel.r1, ThemePanel.g1, ThemePanel.b1, 255);
+            // Цвет строки — единый акцент клиента (как в клик-гуи)
+            int base = ThemePanel.accentSolid();
 
             // Тонкая акцентная риска + имя с тенью
             RenderUtils.drawRoundedRect(ms, X - 4f, py + 2.5f, 1.6f, LINE_H - 5f, 0.8f,

@@ -21,12 +21,16 @@ import fun.wonderful.client.modules.settings.implement.FloatSetting;
 import fun.wonderful.client.modules.settings.implement.TextSetting;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * ClickGUI — одна панель по центру: шапка с поиском и кнопкой тем,
- * вкладки категорий сверху, список модулей с настройками, подвал с подсказкой.
- * Стиль: тёмная панель + один акцентный цвет, аккуратные плавные анимации.
+ * ClickGUI — одна панель по центру в две колонки:
+ * шапка (имя клиента + поиск), слева вертикальный список категорий,
+ * справа модули выбранной категории (имя по центру, настройки под строкой),
+ * подвал с подсказкой и кнопками (только вкл / свернуть / тема).
+ * Стиль: тёмная панель + один акцентный цвет, плавные понятные анимации.
  */
 public class ClickGuiScreen extends Screen {
 
@@ -37,15 +41,18 @@ public class ClickGuiScreen extends Screen {
     static FloatSetting draggingSlider;
     static float dragTrackX, dragTrackW;
     static String filter = "";
+    /** Фильтр «только включённые» (кнопка в подвале). */
+    static boolean showOnlyEnabled = false;
 
     static int screenHeightCached;
 
     // ===== Геометрия панели =====
-    private static final float HEADER_H = 38f;
-    private static final float TABS_H = 32f;
-    private static final float FOOTER_H = 24f;
-    private static final float MIN_W = 300f;
-    private static final float MIN_H = 220f;
+    private static final float HEADER_H = 40f;
+    private static final float FOOTER_H = 32f;
+    private static final float RAIL_W = 118f;
+    private static final float RAIL_ITEM_H = 30f;
+    private static final float MIN_W = 340f;
+    private static final float MIN_H = 230f;
 
     private final List<Module.ModuleCategory> categories = new ArrayList<>();
     private final ModuleList list = new ModuleList();
@@ -59,17 +66,21 @@ public class ClickGuiScreen extends Screen {
     private final AnimationUtils openAnim = new AnimationUtils(0f, 9f, Easings.CUBIC_OUT);
     private final AnimationUtils tooltipAnim = new AnimationUtils(0f, 12f, Easings.CUBIC_OUT);
     private final AnimationUtils searchAnim = new AnimationUtils(0f, 10f, Easings.CUBIC_OUT);
-    private final AnimationUtils paletteAnim = new AnimationUtils(0f, 11f, Easings.CUBIC_OUT);
 
-    /** Пилюля активной вкладки: текущие X/W плывут к целевым. */
-    private float pillX, pillW = -1f;
+    /** Пилюля активной категории: Y плывёт к целевой строке. */
+    private float pillY = -1f;
+
+    /** Hover-анимации кнопок подвала. */
+    private final Map<String, AnimationUtils> btnHover = new HashMap<>();
 
     private Module tooltipModule;
 
     // Кэш координат для кликов
     private float panelX, panelY, panelW, panelH;
     private float searchX, searchY, searchW, searchH = 22f;
-    private float paletteX, paletteY, paletteSize = 20f;
+    private float railTop;
+    private float btnOnX, btnOnW, btnCollapseX, btnCollapseW, btnThemeX;
+    private static final float BTN_H = 20f;
 
     public ClickGuiScreen() {
         super(Text.literal("wonderful"));
@@ -100,6 +111,10 @@ public class ClickGuiScreen extends Screen {
         ClientSoundPlayer.playSound("closegui.wav", 0.6, 1.0f);
     }
 
+    private AnimationUtils btn(String key) {
+        return btnHover.computeIfAbsent(key, k -> new AnimationUtils(0f, 13f, Easings.CUBIC_OUT));
+    }
+
     // ============================================================
     // Рендер
     // ============================================================
@@ -127,8 +142,8 @@ public class ClickGuiScreen extends Screen {
         float scale = 0.965f + 0.035f * p;
         float rise = (1f - p) * 10f;
 
-        panelW = Math.min(Math.max(MIN_W, 440f), this.width - 20f);
-        panelH = Math.min(Math.max(MIN_H, 310f), this.height - 24f);
+        panelW = Math.min(Math.max(MIN_W, 460f), this.width - 20f);
+        panelH = Math.min(Math.max(MIN_H, 320f), this.height - 24f);
         panelX = (this.width - panelW) / 2f;
         panelY = (this.height - panelH) / 2f - 6f;
 
@@ -160,59 +175,49 @@ public class ClickGuiScreen extends Screen {
                 ColorUtils.rgba(0, 0, 0, (int) (50 * p)),
                 ColorUtils.rgba(0, 0, 0, (int) (50 * p)));
 
-        renderHeader(ms, mouseX, mouseY, py, p, ac);
-        renderTabs(ms, mouseX, mouseY, py, dt, p, ac);
+        renderHeader(ms, py, p, ac);
+        renderRail(ms, mouseX, mouseY, py, dt, p, ac);
 
-        // Контент
-        float contentY = py + HEADER_H + TABS_H;
-        float contentH = panelH - HEADER_H - TABS_H - FOOTER_H;
-        list.bounds(panelX + 2f, contentY, panelW - 4f, contentH);
+        // Контент модулей — правая колонка
+        float contentY = py + HEADER_H;
+        float contentH = panelH - HEADER_H - FOOTER_H;
+        list.bounds(panelX + RAIL_W, contentY, panelW - RAIL_W - 2f, contentH);
         list.render(ms, mouseX, mouseY, dt, p, activeCategory, ac);
 
-        renderFooter(ms, py, p, ac);
+        renderFooter(ms, mouseX, mouseY, py, p, ac);
 
         ms.pop();
 
-        // Панель тем — отдельным окном рядом (открывается кнопкой-палитрой)
-        renderThemePanel(context, mouseX, mouseY, p);
+        // Панель тем — отдельным окном рядом (кнопка «тема» в подвале)
+        ThemePanel.updateOpen();
+        if (ThemePanel.isShown()) {
+            float ax = panelX + panelW + 10f;
+            if (ax + ThemePanel.W > this.width - 4f) {
+                ax = Math.max(4f, panelX - ThemePanel.W - 10f);
+            }
+            ThemePanel.anchor(ax, panelY + HEADER_H);
+            ThemePanel.render(context, mouseX, mouseY, p);
+        }
 
         renderTooltip(ms, mouseX, mouseY, p, ac);
     }
 
-    /** Шапка: точка + название, поиск, кнопка палитры. */
-    private void renderHeader(MatrixStack ms, int mouseX, int mouseY, float py, float p, int ac) {
+    /** Шапка: точка-акцент + название слева, поле поиска справа. */
+    private void renderHeader(MatrixStack ms, float py, float p, int ac) {
         float hcy = py + HEADER_H / 2f;
 
-        // Точка-акцент + название
         RenderUtils.drawRoundCircle(ms, panelX + 16f, hcy, 2.6f,
                 ColorUtils.applyAlpha(ac, 0.9f * p));
         ModuleList.text(ms, 15, "wonderful", panelX + 26f, hcy - ModuleList.fh(15) / 2f,
                 ColorUtils.rgba(242, 244, 250, (int) (250 * p)));
 
-        // Кнопка палитры (темы) справа
-        paletteX = panelX + panelW - 14f - paletteSize;
-        paletteY = hcy - paletteSize / 2f;
-        boolean palHover = HoveringUtils.isHovered(mouseX, mouseY, paletteX - 3f, paletteY - 3f,
-                paletteSize + 6f, paletteSize + 6f);
-        paletteAnim.update(ThemePanel.isOpen() ? 1f : palHover ? 0.6f : 0f);
-        float palP = MathHelper.clamp(paletteAnim.getValue(), 0f, 1f);
-        if (palP > 0.03f) {
-            RenderUtils.drawRoundedRect(ms, paletteX - 3f, paletteY - 3f,
-                    paletteSize + 6f, paletteSize + 6f, (paletteSize + 6f) / 2f,
-                    ColorUtils.rgba(255, 255, 255, (int) (26 * palP * p)));
-        }
-        GuiIcons.draw(ms, "theme_palette", paletteX + 1.5f, paletteY + 1.5f, paletteSize - 3f,
-                ColorUtils.applyAlpha(
-                        ThemePanel.isOpen() ? ac : ColorUtils.rgba(178, 185, 200, 255),
-                        (ThemePanel.isOpen() ? 0.95f : 0.85f) * p));
-
-        // Поле поиска: расширяется в фокусе (есть текст)
+        // Поле поиска: расширяется при вводе
         boolean focused = !filter.isEmpty();
         searchAnim.update(focused ? 1f : 0f);
         float sp = MathHelper.clamp(searchAnim.getValue(), 0f, 1f);
-        float baseW = 118f;
-        searchW = baseW + 46f * sp;
-        searchX = paletteX - 10f - searchW;
+        float baseW = 128f;
+        searchW = baseW + 52f * sp;
+        searchX = panelX + panelW - 14f - searchW;
         searchY = hcy - searchH / 2f;
 
         RenderUtils.drawRoundedRect(ms, searchX, searchY, searchW, searchH, searchH / 2f,
@@ -251,101 +256,132 @@ public class ClickGuiScreen extends Screen {
                 ColorUtils.rgba(255, 255, 255, (int) (18 * p)));
     }
 
-    /** Вкладки категорий: иконка + название, пилюля активной плавает между ними. */
-    private void renderTabs(MatrixStack ms, int mouseX, int mouseY, float py, float dt, float p, int ac) {
-        float tabY = py + HEADER_H;
-        float pad = 10f;
+    /** Левая колонка: категории текстом + плавающая пилюля активной. */
+    private void renderRail(MatrixStack ms, int mouseX, int mouseY, float py, float dt, float p, int ac) {
+        float railX = panelX + 8f;
+        float railW = RAIL_W - 18f;
+        railTop = py + HEADER_H + 8f;
 
-        // Раскладка вкладок подряд от левого края
-        float tx = panelX + pad;
-        float targetX = 0f, targetW = 0f;
-        List<float[]> rects = new ArrayList<>();
-        for (Module.ModuleCategory c : categories) {
-            float iconS = 13f;
-            float labelW = ModuleList.tw(12, c.getName());
-            float w = iconS + 5f + labelW + 16f;
-            rects.add(new float[]{tx, w});
-            if (c == activeCategory) {
-                targetX = tx;
-                targetW = w;
-            }
-            tx += w + 4f;
-        }
-
-        // Пилюля: X/W плывут к активной вкладке
-        if (pillW < 0f) {
-            pillX = targetX;
-            pillW = targetW;
-        }
+        // Пилюля: Y плывёт к строке активной категории
+        float targetY = railTop + categories.indexOf(activeCategory) * RAIL_ITEM_H;
+        if (pillY < 0f) pillY = targetY;
         float k = 1f - (float) Math.exp(-dt * 15.0);
-        pillX += (targetX - pillX) * k;
-        pillW += (targetW - pillW) * k;
+        pillY += (targetY - pillY) * k;
 
-        // Пилюля активной вкладки + акцентная линия снизу
-        RenderUtils.drawRoundedRect(ms, pillX, tabY + 4f, pillW, TABS_H - 9f, 7f,
+        RenderUtils.drawRoundedRect(ms, railX, pillY, railW, RAIL_ITEM_H - 4f, 7f,
                 ColorUtils.applyAlpha(ac, 0.16f * p));
-        RenderUtils.drawRoundedRect(ms, pillX + 6f, tabY + TABS_H - 5.2f, pillW - 12f, 1.6f, 0.8f,
+        RenderUtils.drawRoundedRect(ms, railX + 3.2f, pillY + 6f, 1.8f, RAIL_ITEM_H - 16f, 0.9f,
                 ColorUtils.applyAlpha(ac, 0.85f * p));
 
-        // Содержимое вкладок
         for (int i = 0; i < categories.size(); i++) {
             Module.ModuleCategory c = categories.get(i);
-            float rx = rects.get(i)[0];
-            float rw = rects.get(i)[1];
+            float iy = railTop + i * RAIL_ITEM_H;
+            float icy = iy + (RAIL_ITEM_H - 4f) / 2f;
             boolean active = c == activeCategory;
-            boolean hov = !active && HoveringUtils.isHovered(mouseX, mouseY, rx, tabY + 3f, rw, TABS_H - 6f);
+            boolean hov = !active && HoveringUtils.isHovered(mouseX, mouseY, railX, iy, railW, RAIL_ITEM_H - 4f);
 
             if (hov) {
-                RenderUtils.drawRoundedRect(ms, rx, tabY + 4f, rw, TABS_H - 9f, 7f,
+                RenderUtils.drawRoundedRect(ms, railX, iy, railW, RAIL_ITEM_H - 4f, 7f,
                         ColorUtils.rgba(255, 255, 255, (int) (12 * p)));
             }
 
-            float iconS = 13f;
-            float cy = tabY + TABS_H / 2f;
-            int iconCol = active
-                    ? ColorUtils.applyAlpha(ac, 0.95f * p)
-                    : ColorUtils.rgba(150, 157, 172, (int) (200 * p));
-            CategoryIcons.draw(ms, c, rx + 9f, cy - iconS / 2f, iconS, iconCol);
-
-            ModuleList.text(ms, 12, c.getName(), rx + 9f + iconS + 5f, cy - ModuleList.fh(12) / 2f,
+            ModuleList.text(ms, 12, c.getName(), railX + 12f, icy - ModuleList.fh(12) / 2f,
                     active
                             ? ColorUtils.rgba(240, 243, 250, (int) (248 * p))
                             : ColorUtils.rgba(176, 183, 197, (int) (205 * p)));
+
+            // Счётчик включённых модулей категории — тусклая цифра справа
+            int cnt = list.enabledCount(c);
+            if (cnt > 0) {
+                String cs = String.valueOf(cnt);
+                ModuleList.text(ms, 10, cs, railX + railW - 4f - ModuleList.tw(10, cs),
+                        icy - ModuleList.fh(10) / 2f,
+                        active
+                                ? ColorUtils.applyAlpha(ac, 0.85f * p)
+                                : ColorUtils.rgba(130, 137, 152, (int) (170 * p)));
+            }
         }
 
-        RenderUtils.drawRoundedRect(ms, panelX + 10f, tabY + TABS_H - 1f, panelW - 20f, 1f, 0.5f,
+        // Вертикальный разделитель колонок
+        RenderUtils.drawRoundedRect(ms, panelX + RAIL_W, py + HEADER_H + 8f, 1f,
+                panelH - HEADER_H - FOOTER_H - 16f, 0.5f,
+                ColorUtils.rgba(255, 255, 255, (int) (16 * p)));
+    }
+
+    /** Подвал: подсказка слева, кнопки справа (только вкл / свернуть / тема). */
+    private void renderFooter(MatrixStack ms, int mouseX, int mouseY, float py, float p, int ac) {
+        float fy = py + panelH - FOOTER_H / 2f;
+
+        String hint = "ЛКМ — вкл · ПКМ — настройки · СКМ — бинд";
+        ModuleList.text(ms, 10, hint, panelX + 14f, fy - ModuleList.fh(10) / 2f,
+                ColorUtils.rgba(120, 127, 142, (int) (185 * p)));
+
+        // Кнопка «тема» (иконка палитры)
+        btnThemeX = panelX + panelW - 14f - BTN_H - 8f;
+        drawIconBtn(ms, mouseX, mouseY, btnThemeX, fy - BTN_H / 2f, BTN_H, "theme",
+                ThemePanel.isOpen(), p, ac);
+
+        // Кнопка «свернуть»
+        String collapse = "свернуть";
+        btnCollapseW = ModuleList.tw(10, collapse) + 16f;
+        btnCollapseX = btnThemeX - 8f - btnCollapseW;
+        drawTextBtn(ms, mouseX, mouseY, btnCollapseX, fy - BTN_H / 2f, btnCollapseW, collapse,
+                false, p, ac);
+
+        // Кнопка «только вкл»
+        String only = "только вкл";
+        btnOnW = ModuleList.tw(10, only) + 16f;
+        btnOnX = btnCollapseX - 8f - btnOnW;
+        drawTextBtn(ms, mouseX, mouseY, btnOnX, fy - BTN_H / 2f, btnOnW, only,
+                showOnlyEnabled, p, ac);
+
+        // Разделитель над подвалом
+        RenderUtils.drawRoundedRect(ms, panelX + 10f, py + panelH - FOOTER_H, panelW - 20f, 1f, 0.5f,
                 ColorUtils.rgba(255, 255, 255, (int) (18 * p)));
     }
 
-    /** Подвал: счётчики слева, подсказка управления справа. */
-    private void renderFooter(MatrixStack ms, float py, float p, int ac) {
-        float fy = py + panelH - FOOTER_H / 2f;
+    /** Кнопка-текст в подвале: пилюля, при активном режиме — заливка акцентом. */
+    private void drawTextBtn(MatrixStack ms, int mouseX, int mouseY, float bx, float by, float bw,
+                             String label, boolean on, float p, int ac) {
+        boolean hov = HoveringUtils.isHovered(mouseX, mouseY, bx, by, bw, BTN_H);
+        AnimationUtils a = btn(label);
+        a.update(hov ? 1f : 0f);
+        float hp = MathHelper.clamp(a.getValue(), 0f, 1f);
 
-        int total = list.modules(activeCategory).size();
-        int enabled = list.enabledCount(activeCategory);
-        String counts = enabled + " / " + total + " вкл";
-        float dotR = 2f;
-        RenderUtils.drawRoundCircle(ms, panelX + 16f, fy, dotR,
-                ColorUtils.applyAlpha(enabled > 0 ? ac : ColorUtils.rgba(120, 127, 142, 255), 0.8f * p));
-        ModuleList.text(ms, 10, counts, panelX + 24f, fy - ModuleList.fh(10) / 2f,
-                ColorUtils.rgba(170, 177, 192, (int) (215 * p)));
+        if (on) {
+            RenderUtils.drawRoundedRect(ms, bx, by, bw, BTN_H, BTN_H / 2f,
+                    ColorUtils.applyAlpha(ac, 0.20f * p));
+        } else if (hp > 0.03f) {
+            RenderUtils.drawRoundedRect(ms, bx, by, bw, BTN_H, BTN_H / 2f,
+                    ColorUtils.rgba(255, 255, 255, (int) (14 * hp * p)));
+        }
 
-        String hint = "ЛКМ — вкл · ПКМ — настройки · СКМ — бинд";
-        ModuleList.text(ms, 10, hint, panelX + panelW - 14f - ModuleList.tw(10, hint),
-                fy - ModuleList.fh(10) / 2f, ColorUtils.rgba(120, 127, 142, (int) (185 * p)));
+        ModuleList.text(ms, 10, label, bx + bw / 2f - ModuleList.tw(10, label) / 2f,
+                by + BTN_H / 2f - ModuleList.fh(10) / 2f,
+                on
+                        ? ColorUtils.applyAlpha(ColorUtils.interpolateColor(ac, 0xFFFFFFFF, 0.25f), 0.95f * p)
+                        : ColorUtils.rgba((int) (176 + 40 * hp), (int) (183 + 35 * hp),
+                          (int) (197 + 30 * hp), (int) (215 * p)));
     }
 
-    /** Панель тем поверх, рядом с главной панелью. */
-    private void renderThemePanel(DrawContext context, int mouseX, int mouseY, float p) {
-        ThemePanel.updateOpen();
-        if (!ThemePanel.isShown()) return;
+    /** Кнопка-иконка в подвале (палитра тем). */
+    private void drawIconBtn(MatrixStack ms, int mouseX, int mouseY, float bx, float by, float size,
+                             String key, boolean on, float p, int ac) {
+        boolean hov = HoveringUtils.isHovered(mouseX, mouseY, bx, by, size, size);
+        AnimationUtils a = btn(key);
+        a.update(hov || on ? 1f : 0f);
+        float hp = MathHelper.clamp(a.getValue(), 0f, 1f);
 
-        float ax = panelX + panelW + 10f;
-        if (ax + ThemePanel.W > this.width - 4f) {
-            ax = Math.max(4f, panelX - ThemePanel.W - 10f);
+        if (hp > 0.03f) {
+            RenderUtils.drawRoundedRect(ms, bx, by, size, size, size / 2f,
+                    on
+                            ? ColorUtils.applyAlpha(ac, 0.20f * p)
+                            : ColorUtils.rgba(255, 255, 255, (int) (16 * hp * p)));
         }
-        ThemePanel.anchor(ax, panelY + HEADER_H);
-        ThemePanel.render(context, mouseX, mouseY, p);
+        GuiIcons.draw(ms, "theme_palette", bx + 3f, by + 3f, size - 6f,
+                ColorUtils.applyAlpha(
+                        on ? ac : ColorUtils.rgba(178, 185, 200, 255),
+                        (on ? 0.95f : 0.80f + 0.15f * hp) * p));
     }
 
     /** Тултип с описанием модуля. */
@@ -414,31 +450,41 @@ public class ClickGuiScreen extends Screen {
         }
 
         if (HoveringUtils.isHovered(mx, my, panelX, panelY, panelW, panelH)) {
-            // Кнопка палитры
-            if (HoveringUtils.isHovered(mx, my, paletteX - 3f, paletteY - 3f, paletteSize + 6f, paletteSize + 6f)) {
-                if (button == 0) ThemePanel.setOpen(!ThemePanel.isOpen());
-                return true;
+            float fy = panelY + panelH - FOOTER_H / 2f;
+
+            // Кнопки подвала
+            if (button == 0) {
+                if (HoveringUtils.isHovered(mx, my, btnThemeX, fy - BTN_H / 2f, BTN_H, BTN_H)) {
+                    ThemePanel.setOpen(!ThemePanel.isOpen());
+                    return true;
+                }
+                if (HoveringUtils.isHovered(mx, my, btnCollapseX, fy - BTN_H / 2f, btnCollapseW, BTN_H)) {
+                    list.collapseAll();
+                    return true;
+                }
+                if (HoveringUtils.isHovered(mx, my, btnOnX, fy - BTN_H / 2f, btnOnW, BTN_H)) {
+                    showOnlyEnabled = !showOnlyEnabled;
+                    return true;
+                }
             }
-            // Поле поиска — просто визуальный фокус, ввод идёт всегда
+
+            // Поле поиска — визуальный фокус, ввод идёт всегда
             if (HoveringUtils.isHovered(mx, my, searchX, searchY, searchW, searchH)) {
                 return true;
             }
-            // Вкладки
-            float tabY = panelY + HEADER_H;
-            if (my >= tabY && my <= tabY + TABS_H) {
-                float tx = panelX + 10f;
-                for (Module.ModuleCategory c : categories) {
-                    float iconS = 13f;
-                    float w = iconS + 5f + ModuleList.tw(12, c.getName()) + 16f;
-                    if (mx >= tx && mx <= tx + w) {
-                        if (activeCategory != c) {
-                            activeCategory = c;
-                        }
-                        return true;
-                    }
-                    tx += w + 4f;
+
+            // Колонка категорий
+            float railX = panelX + 8f;
+            float railW = RAIL_W - 18f;
+            if (mx >= railX && mx <= railX + railW && my >= railTop
+                    && my < railTop + categories.size() * RAIL_ITEM_H) {
+                int idx = (int) ((my - railTop) / RAIL_ITEM_H);
+                if (idx >= 0 && idx < categories.size()) {
+                    activeCategory = categories.get(idx);
                 }
+                return true;
             }
+
             // Список модулей
             if (list.hit(mx, my)) {
                 if (activeTextSetting != null) activeTextSetting = null;
@@ -561,6 +607,10 @@ public class ClickGuiScreen extends Screen {
                 filter = "";
                 return true;
             }
+            if (showOnlyEnabled) {
+                showOnlyEnabled = false;
+                return true;
+            }
             requestClose();
             return true;
         }
@@ -604,6 +654,7 @@ public class ClickGuiScreen extends Screen {
         activeTextSetting = null;
         draggingSlider = null;
         filter = "";
+        showOnlyEnabled = false;
         ThemePanel.setOpen(false);
     }
 

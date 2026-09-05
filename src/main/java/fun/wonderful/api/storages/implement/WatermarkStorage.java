@@ -14,6 +14,7 @@ import fun.wonderful.api.utils.render.fonts.msdf.Font;
 import fun.wonderful.api.utils.render.fonts.msdf.Fonts;
 import fun.wonderful.client.modules.Module;
 import fun.wonderful.client.modules.impl.TestModules;
+import fun.wonderful.client.ui.clickgui.ThemePanel;
 import fun.wonderful.client.modules.settings.implement.BooleanSetting;
 import net.minecraft.client.network.PlayerListEntry;
 
@@ -163,7 +164,7 @@ public class WatermarkStorage implements QClient {
                 ColorUtils.rgba(9, 12, 20, (int) (150 * alpha)));
 
         // Accent outline
-        int accent = ColorUtils.getThemeColor();
+        int accent = ThemePanel.accentSolid();
         int ar = (accent >> 16) & 0xFF, ag = (accent >> 8) & 0xFF, ab = accent & 0xFF;
         RenderUtils.drawRoundedRectOutline(ms, x, y, w, h, BORDER_RADIUS, 1.1f,
                 ColorUtils.rgba(ar, ag, ab, (int) (140 * alpha)),

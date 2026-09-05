@@ -133,6 +133,11 @@ class ModuleList {
         scrollTarget -= amount * 26f;
     }
 
+    /** Свернуть все раскрытые настройки модулей (кнопка в подвале). */
+    void collapseAll() {
+        expanded.clear();
+    }
+
     Module tooltipCandidate() {
         if (hoverModule != null
                 && System.currentTimeMillis() - hoverSince > 350
@@ -149,7 +154,7 @@ class ModuleList {
         List<Module> mods = visibleModules(category);
 
         // Смена вкладки или фильтра — каскадный пуск строк и сброс скролла
-        String key = category.name() + "|" + ClickGuiScreen.filter;
+        String key = category.name() + "|" + ClickGuiScreen.filter + "|" + ClickGuiScreen.showOnlyEnabled;
         if (!key.equals(contentKey)) {
             contentKey = key;
             staggerAt = System.currentTimeMillis();
@@ -211,6 +216,7 @@ class ModuleList {
     }
 
     private boolean matches(Module m) {
+        if (ClickGuiScreen.showOnlyEnabled && !m.isEnable()) return false;
         String q = ClickGuiScreen.filter.trim().toLowerCase(Locale.ROOT);
         return q.isEmpty() || m.getName().toLowerCase(Locale.ROOT).contains(q);
     }
@@ -331,8 +337,9 @@ class ModuleList {
                     ColorUtils.applyAlpha(ac, 0.9f * enBar * vp));
         }
 
-        // Имя: светлеет при включении и наведении
-        float nameX = x + PAD + 4f + 2f * hp;
+        // Имя по центру строки: светлеет при включении и наведении
+        float nameW = tw(13, m.getName());
+        float nameX = x + (w - nameW) / 2f;
         int nameBase = ColorUtils.rgba(205, 211, 224, (int) (225 * vp));
         int nameOn = ColorUtils.interpolateColor(nameBase,
                 ColorUtils.rgba(243, 246, 252, (int) (245 * vp)), Math.min(1f, enBar * 0.8f));
@@ -362,21 +369,21 @@ class ModuleList {
         if (isListening) {
             float lw = tw(10, "[...]") + 12;
             float lh = 14;
-            float lx = swX - 8 - lw;
+            float lx = x + 10f;
             float ly = ry + ROW_H / 2f - lh / 2f;
             RenderUtils.drawRoundedRect(ms, lx, ly, lw, lh, lh / 2f,
                     ColorUtils.applyAlpha(ac, 0.3f * vp));
-            text(ms, 10, "[...]", lx + 7, ry + ROW_H / 2f - fh(10) / 2f,
+            text(ms, 10, "[...]", lx + 6, ry + ROW_H / 2f - fh(10) / 2f,
                     ColorUtils.applyAlpha(ac, 0.9f * vp));
         } else if (m.getKey() != -1) {
             String kn = KeyBoardUtils.getBindName(m.getKey());
             float kw = tw(10, kn) + 12;
             float kh = 14;
-            float kx = swX - 8 - kw;
+            float kx = x + 10f;
             float ky = ry + ROW_H / 2f - kh / 2f;
             RenderUtils.drawRoundedRect(ms, kx, ky, kw, kh, kh / 2f,
                     ColorUtils.rgba(255, 255, 255, (int) (20 * vp)));
-            text(ms, 10, kn, kx + 7, ry + ROW_H / 2f - fh(10) / 2f,
+            text(ms, 10, kn, kx + 6, ry + ROW_H / 2f - fh(10) / 2f,
                     ColorUtils.rgba(200, 206, 219, (int) (210 * vp)));
         }
 
@@ -743,7 +750,7 @@ class ModuleList {
                     if (m.getKey() != -1 && ClickGuiScreen.listeningModule != m) {
                         String kn = KeyBoardUtils.getBindName(m.getKey());
                         float kw = tw(10, kn) + 12;
-                        float kx = swX - 8 - kw;
+                        float kx = x + 10f;
                         float ky = cy + ROW_H / 2f - 7f;
                         if (HoveringUtils.isHovered(mx, my, kx, ky, kw, 14f)) {
                             ClickGuiScreen.listeningModule = m;

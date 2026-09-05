@@ -177,8 +177,8 @@ public class Nametags extends Module {
             RenderUtils.drawRoundedRect(ms, panelX, panelY, panelW, panelH, radius,
                     ColorUtils.rgba(9, 12, 20, 246));
 
-            int acTop = ThemePanel.accent(panelY);
-            int acBot = ThemePanel.accent(panelY + panelH);
+            int acTop = ThemePanel.accentSolid();
+            int acBot = ThemePanel.accentSolid();
             int ar = (acTop >> 16) & 0xFF, ag = (acTop >> 8) & 0xFF, ab = acTop & 0xFF;
             int br = (acBot >> 16) & 0xFF, bg = (acBot >> 8) & 0xFF, bb = acBot & 0xFF;
 
@@ -207,7 +207,7 @@ public class Nametags extends Module {
             // HP: сердце в цвет темы + число (при HP < 35% — плавный уход в красный)
             if (showHp) {
                 cursor += gap;
-                int heartAccent = ThemePanel.accent(data.screenY);
+                int heartAccent = ThemePanel.accentSolid();
                 int heartColor = data.healthPercent >= 0.35f
                         ? heartAccent
                         : ColorUtils.interpolateColor(heartAccent, 0xFFFF4553,

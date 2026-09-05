@@ -138,8 +138,8 @@ public class TargetHudStorage implements QClient {
 
         MatrixStack ms = event.getContext().getMatrices();
 
-        int acTop = ThemePanel.accent(y);
-        int acBot = ThemePanel.accent(y + h);
+        int acTop = ThemePanel.accentSolid();
+        int acBot = ThemePanel.accentSolid();
         int ar = (acTop >> 16) & 0xFF, ag = (acTop >> 8) & 0xFF, ab = acTop & 0xFF;
         int br = (acBot >> 16) & 0xFF, bg = (acBot >> 8) & 0xFF, bb = acBot & 0xFF;
 
@@ -182,7 +182,7 @@ public class TargetHudStorage implements QClient {
         float barY = y + 24f;
         float barW = w - (textX - x) - 10f;
         float barH = 5.5f;
-        int heartAccent = ThemePanel.accent(barY);
+        int heartAccent = ThemePanel.accentSolid();
         int barColor = shownHealth >= 0.35f
                 ? heartAccent
                 : ColorUtils.interpolateColor(heartAccent, 0xFFFF4553,
