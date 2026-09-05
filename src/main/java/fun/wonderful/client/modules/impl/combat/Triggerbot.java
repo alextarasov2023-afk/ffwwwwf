@@ -34,6 +34,8 @@ public class Triggerbot extends Module {
 
     private boolean needSprintReset = false;
     private boolean sprintResetDone = false;
+    /** Осталось тиков сброса спринта (2 базовых + случайные 1..3). */
+    private int sprintResetTicksLeft = 0;
 
     private int lastAttackTick = -100;
     private int currentTick = 0;
@@ -52,6 +54,7 @@ public class Triggerbot extends Module {
     public void onDisable() {
         needSprintReset = false;
         sprintResetDone = false;
+        sprintResetTicksLeft = 0;
         landedTicks = 0;
         lastTarget = null;
         RotationStorage.instance.stopRotation();
@@ -93,9 +96,11 @@ public class Triggerbot extends Module {
         boolean shouldResetSprint = sprintReset.isState() && !isMace && mc.player.isSprinting();
         if (shouldResetSprint && !needSprintReset && !sprintResetDone) {
             needSprintReset = true;
+            sprintResetTicksLeft = 2 + java.util.concurrent.ThreadLocalRandom.current().nextInt(1, 4);
             return;
         }
 
+        // Держим паузу без движения всю длительность, затем бьём
         if (needSprintReset && !sprintResetDone) return;
 
         attack(target);
@@ -107,8 +112,11 @@ public class Triggerbot extends Module {
             event.setForward(0f);
             event.setStrafe(0f);
             event.setJump(false);
-            needSprintReset = false;
-            sprintResetDone = true;
+            // Каждый тик паузы гасим движение; отсчитав 2+1..3 тика — отпускаем
+            if (--sprintResetTicksLeft <= 0) {
+                needSprintReset = false;
+                sprintResetDone = true;
+            }
         }
     }
 
@@ -159,9 +167,11 @@ public class Triggerbot extends Module {
         boolean forcedAttack = inWeb || inWater || blind;
         boolean falling = !inWeb && isCritFalling();
         float cooldownThreshold = 0.848f;
+        // Булава: бьём только при остатке кулдауна < 7.5% (прогресс >= 0.925)
+        float maceThreshold = 0.925f;
         String mode = critMode.getCurrent();
 
-        if (isMace) return cooldown >= cooldownThreshold;
+        if (isMace) return cooldown >= maceThreshold;
         if (forcedAttack) return cooldown >= 0.96f;
 
         if ("Only Crit".equals(mode)) {

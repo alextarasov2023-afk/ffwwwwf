@@ -64,6 +64,9 @@ public class KillAura extends Module {
 
     private enum AuraState {IDLE, AIM, SPRINT_RESET, RETURN, COOLDOWN}
 
+    /** Тиков держать сброс спринта: 2 базовых + случайные 1..3 (итого 3..5). */
+    private int sprintResetDuration = 3;
+
     private Entity currentTarget;
 
     public Entity getLastTarget() {
@@ -174,9 +177,10 @@ public class KillAura extends Module {
             return;
         }
 
-        // Сброс спринта: один тик без движения, затем удар
+        // Сброс спринта: 2 тика + случайные 1..3 без движения, затем удар
         if (sprintReset.isState() && mc.player.isSprinting()) {
             mc.player.setSprinting(false);
+            sprintResetDuration = 2 + java.util.concurrent.ThreadLocalRandom.current().nextInt(1, 4);
             setState(AuraState.SPRINT_RESET);
             return;
         }
@@ -194,12 +198,13 @@ public class KillAura extends Module {
                 AIM_TIMEOUT_TICKS, 100, false);
         mc.player.setSprinting(false);
 
-        if (stateTicks >= 3 || !isValidTarget(target)) {
-            // Спринт не сбросился/цель пропала — возвращаемся к обычному циклу
+        if (!isValidTarget(target) || stateTicks >= sprintResetDuration + 3) {
+            // Цель пропала / слишком долго стоим — возвращаемся к обычному циклу
             beginAim();
             return;
         }
-        if (hitReady(target)) {
+        // Бьём только после полной паузы (2 + 1..3 тика) и готовности удара
+        if (stateTicks >= sprintResetDuration && hitReady(target)) {
             attack(target);
         }
     }
@@ -346,9 +351,11 @@ public class KillAura extends Module {
         boolean forcedAttack = inWeb || inWater || blind;
         boolean falling = !inWeb && isCritFalling();
         float cooldownThreshold = 0.848f;
+        // Булава: бьём только при остатке кулдауна < 7.5% (прогресс >= 0.925)
+        float maceThreshold = 0.925f;
         String mode = critMode.getCurrent();
 
-        if (isMace) return cooldown >= cooldownThreshold;
+        if (isMace) return cooldown >= maceThreshold;
         if (forcedAttack) return cooldown >= 0.96f;
 
         if ("Off".equals(mode)) {
