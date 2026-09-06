@@ -1,0 +1,82 @@
+name: Build mod
+
+on:
+  push:
+    branches: [arena/01a07805-ffwwwwf]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Fetch jna (нужен для компиляции Discord RPC)
+        run: |
+          mkdir -p libs
+          curl -fsSL -o libs/jna-5.15.0.jar \
+            https://repo.maven.apache.org/maven2/net/java/dev/jna/jna/5.15.0/jna-5.15.0.jar
+          ls -la libs/jna-5.15.0.jar
+
+      - name: Fetch baritone 1.13.1 (nested jar для MC 1.21.4)
+        run: |
+          mkdir -p libs
+          curl -fsSL -o libs/baritone-standalone-fabric-1.13.1.jar \
+            https://github.com/cabaletta/baritone/releases/download/v1.13.1/baritone-standalone-fabric-1.13.1.jar
+          ls -la libs/baritone-standalone-fabric-1.13.1.jar
+
+      - name: Build (remapJar)
+        run: ./gradlew remapJar --no-daemon --stacktrace
+
+      - name: Show result
+        run: ls -la build/libs
+
+      - name: Upload mod jar (artifact)
+        uses: actions/upload-artifact@v5
+        with:
+          name: wonderful-mod
+          path: build/libs/wonderful-*.jar
+          if-no-files-found: error
+
+      - name: Publish to Release (постоянная ссылка на jar)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          JAR=$(ls build/libs/wonderful-*.jar | grep -v sources | head -1)
+          gh release delete build-main -y --cleanup-tag || true
+          gh release create build-main "$JAR" \
+            --title "wonderful — сборка ветки main" \
+            --notes "Автосборка ветки arena/01a07805-ffwwwwf (код main). MC 1.21.4, Fabric Loader 0.18.4+, Fabric API. Baritone 1.13.1 вложен." \
+            --prerelease
+
+      - name: Commit jar to libs/ (jar внутри репозитория)
+        run: |
+          JAR=$(ls build/libs/wonderful-*.jar | grep -v sources | head -1)
+          mkdir -p libs
+          cp "$JAR" libs/
+          git config user.name "arena-ai-coding-agent[bot]"
+          git config user.email "arena-ai-coding-agent[bot]@users.noreply.github.com"
+          git add libs/wonderful-*.jar
+          if ! git diff --cached --quiet; then
+            git commit -m "build: свежий jar мода в libs/ [skip ci]"
+            git pull --rebase origin "${GITHUB_REF_NAME}" || true
+            git push
+          fi

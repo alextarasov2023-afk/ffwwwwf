@@ -18,10 +18,16 @@ base {
 	archivesName = project.archives_base_name
 }
 
+// Windows-специфика (OneDrive / папка mods) применяется только на Windows,
+// чтобы проект без правок собирался и на CI/Linux.
+def isWindows = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("windows")
+
 // OneDrive блокирует/тормозит папку build (файлы заняты синхронизацией),
 // из-за чего clean/compileJava падают с "Unable to delete directory".
 // Выносим папку сборки за пределы OneDrive.
-layout.buildDirectory = file("C:/Users/1/.wonderful-build")
+if (isWindows) {
+	layout.buildDirectory = file("C:/Users/1/.wonderful-build")
+}
 
 repositories {
 }
@@ -32,8 +38,10 @@ dependencies {
 	    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 		modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 		modLocalRuntime files(baritoneJar)
-		implementation files(netherPathfinderJar)
-		shade files(netherPathfinderJar)
+		if (netherPathfinderJar.exists()) {
+			implementation files(netherPathfinderJar)
+			shade files(netherPathfinderJar)
+		}
 		implementation files("libs/jna-5.15.0.jar")
 		shade files("libs/jna-5.15.0.jar")
 	    compileOnly 'org.projectlombok:lombok:1.18.44'
@@ -78,9 +86,6 @@ jar {
 		if (!baritoneJar.exists()) {
 			throw new GradleException("Missing nested Baritone jar: ${baritoneJar}")
 		}
-		if (!netherPathfinderJar.exists()) {
-			throw new GradleException("Missing nether-pathfinder jar: ${netherPathfinderJar}")
-		}
 	}
 
 	from {
@@ -103,19 +108,21 @@ jar {
 // Автоматический деплой собранного мода в папку mods Minecraft.
 // Иначе легко случайно скопировать в mods устаревший jar из старой папки build
 // (без refmap) — что и вызывало краш "No refMap loaded ... Scanned 0 target(s)".
-def minecraftModsDir = file("C:/Users/1/AppData/Roaming/.minecraft/mods")
+if (isWindows) {
+	def minecraftModsDir = file("C:/Users/1/AppData/Roaming/.minecraft/mods")
 
-tasks.register("deployMod", Copy) {
-	dependsOn tasks.named("remapJar")
-	from(tasks.named("remapJar"))
-	into minecraftModsDir
-	doLast {
-		println "Deployed ${project.archives_base_name}-${project.version}.jar -> ${minecraftModsDir}"
+	tasks.register("deployMod", Copy) {
+		dependsOn tasks.named("remapJar")
+		from(tasks.named("remapJar"))
+		into minecraftModsDir
+		doLast {
+			println "Deployed ${project.archives_base_name}-${project.version}.jar -> ${minecraftModsDir}"
+		}
 	}
-}
 
-tasks.named("build") {
-	finalizedBy "deployMod"
+	tasks.named("build") {
+		finalizedBy "deployMod"
+	}
 }
 
 publishing {
