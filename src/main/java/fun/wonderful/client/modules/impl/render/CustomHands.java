@@ -30,8 +30,14 @@ public class CustomHands extends Module {
         addSettings(style, brightness, glow);
     }
 
+    private static boolean logged = false;
+
     public static VertexConsumerProvider wrap(VertexConsumerProvider parent) {
         if (INSTANCE == null || !INSTANCE.isEnable()) return parent;
+        if (!logged) {
+            logged = true;
+            System.out.println("[CustomHands] hands shader wrap active: " + INSTANCE.style.getCurrent());
+        }
         int idx = 0;
         String cur = INSTANCE.style.getCurrent();
         for (int i = 0; i < STYLES.length; i++) {

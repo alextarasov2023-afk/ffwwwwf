@@ -2,8 +2,6 @@ package fun.wonderful.client.modules.impl.render;
 
 import java.awt.Color;
 
-import fun.wonderful.api.events.EventLink;
-import fun.wonderful.api.events.implement.Event3DRender;
 import fun.wonderful.api.utils.color.ColorUtils;
 import fun.wonderful.api.utils.render.sky.CosmicSkyRenderer;
 import fun.wonderful.client.modules.Module;
@@ -47,15 +45,7 @@ public class ShaderSky extends Module {
         return INSTANCE != null && INSTANCE.isEnable();
     }
 
-    /**
-     * Рисует шейдер-небо ПОСЛЕ рендера мира: квад на дальней плоскости
-     * проходит тест глубины только там, где небо — мир и сущности поверх.
-     */
-    @EventLink
-    public void onRender3D(Event3DRender event) {
-        if (!isEnable() || mc.player == null || mc.world == null) return;
-        CosmicSkyRenderer.render(viewIndex(), speed.get(), intensity.get() / 100f);
-    }
+
 
     /**
      * Цвет неба/тумана в тон туманности: медленно плывущий космический оттенок,

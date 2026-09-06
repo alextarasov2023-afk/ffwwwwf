@@ -20,7 +20,8 @@
   "IMinecraftClientAccessor",
   "ILivingEntityAccessor",
   "ClientWorldMixin",
-  "HeldItemRendererMixin"
+  "HeldItemRendererMixin",
+  "SkyRenderingMixin"
  ],
  "injectors": {
   "defaultRequire": 1

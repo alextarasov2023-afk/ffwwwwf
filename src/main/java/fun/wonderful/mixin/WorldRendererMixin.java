@@ -3,6 +3,7 @@ package fun.wonderful.mixin;
 import fun.wonderful.Wonderful;
 import fun.wonderful.api.events.EventInvoker;
 import fun.wonderful.api.events.implement.Event3DRender;
+import fun.wonderful.client.modules.impl.render.ShaderSky;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.RenderTickCounter;
@@ -28,6 +29,15 @@ public class WorldRendererMixin {
                                          Matrix4f projectionMatrix,
                                          CallbackInfo ci) {
         if (Wonderful.INSTANCE == null || !Wonderful.isReady()) return;
+
+        // Шейдер-небо: прямой вызов (не через события) — надёжность важнее
+        if (ShaderSky.isCosmic()) {
+            try {
+                ShaderSky.renderCosmic();
+            } catch (Exception e) {
+                System.err.println("[ShaderSky] render failed: " + e);
+            }
+        }
 
         boolean has3DListeners = EventInvoker.hasListeners(Event3DRender.class);
         if (!has3DListeners) return;
