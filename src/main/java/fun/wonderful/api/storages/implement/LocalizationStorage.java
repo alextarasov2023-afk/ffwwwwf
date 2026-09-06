@@ -44,6 +44,10 @@ public class LocalizationStorage {
         add("Аврора", "Aurora", "Аврора");
         add("Звездопад", "Starfall", "Зорепад");
         add("Галактика", "Galaxy", "Галактика");
+        add("Custom Hands", "Custom Hands", "Кастомні руки");
+        add("Заливка", "Fill", "Заливка");
+        add("Звёздная пыль", "Stardust", "Зоряний пил");
+        add("Свечение", "Glow", "Свічення");
         add("Яркость", "Brightness", "Яскравість");
         add("Ватермарка", "Watermark", "Ватермарка");
         add("Кейбинды", "Keybinds", "Хоткеї");
