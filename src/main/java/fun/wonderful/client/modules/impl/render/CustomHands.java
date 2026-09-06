@@ -1,6 +1,7 @@
 package fun.wonderful.client.modules.impl.render;
 
 import net.minecraft.client.render.VertexConsumerProvider;
+import fun.wonderful.api.utils.render.hands.HandsShaderProvider;
 
 import fun.wonderful.api.utils.render.hands.HandsShaderProvider;
 import fun.wonderful.client.modules.Module;
@@ -34,6 +35,7 @@ public class CustomHands extends Module {
 
     public static VertexConsumerProvider wrap(VertexConsumerProvider parent) {
         if (INSTANCE == null || !INSTANCE.isEnable()) return parent;
+        if (parent instanceof HandsShaderProvider) return parent; // уже обёрнуто
         if (!logged) {
             logged = true;
             System.out.println("[CustomHands] hands shader wrap active: " + INSTANCE.style.getCurrent());

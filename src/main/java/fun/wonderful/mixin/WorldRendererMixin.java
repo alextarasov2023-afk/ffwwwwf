@@ -3,7 +3,6 @@ package fun.wonderful.mixin;
 import fun.wonderful.Wonderful;
 import fun.wonderful.api.events.EventInvoker;
 import fun.wonderful.api.events.implement.Event3DRender;
-import fun.wonderful.client.modules.impl.render.ShaderSky;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.RenderTickCounter;
@@ -13,7 +12,6 @@ import net.minecraft.client.util.math.MatrixStack;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(WorldRenderer.class)
@@ -29,15 +27,6 @@ public class WorldRendererMixin {
                                          Matrix4f projectionMatrix,
                                          CallbackInfo ci) {
         if (Wonderful.INSTANCE == null || !Wonderful.isReady()) return;
-
-        // Шейдер-небо: прямой вызов (не через события) — надёжность важнее
-        if (ShaderSky.isCosmic()) {
-            try {
-                ShaderSky.renderCosmic();
-            } catch (Exception e) {
-                System.err.println("[ShaderSky] render failed: " + e);
-            }
-        }
 
         boolean has3DListeners = EventInvoker.hasListeners(Event3DRender.class);
         if (!has3DListeners) return;

@@ -31,6 +31,9 @@ public class InitializeStorage implements QClient {
         Wonderful.INSTANCE.commandStorage = new CommandStorage();
         Wonderful.INSTANCE.configStorage = new ConfigStorage();
 
+        // Шейдер-небо (первым слушателем EventRender.Default — до HUD)
+        new SkyRenderStorage();
+
         // Рендер уведомлений (слушает EventRender.Default)
         new NotificationRenderer();
 
