@@ -105,7 +105,10 @@ public class Triggerbot extends Module {
             hasReset = true;
             mc.player.setSprinting(false);
             sprintResetTicks--;
-        } else if (hasReset) {
+        } else if (hasReset && mc.player.isOnGround()) {
+            // Восстанавливаем спринт ТОЛЬКО на земле: в воздухе держим сброшенным,
+            // иначе к началу падения сервер снова видит спринт и крит-удар
+            // при падении никогда не проходит
             mc.options.sprintKey.setPressed(true);
             mc.player.setSprinting(true);
             hasReset = false;
