@@ -1,0 +1,16 @@
+== /home/runner/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged/1.21.4-net.fabricmc.yarn.1_21_4.1.21.4+build.8-v2/minecraft-merged-1.21.4-net.fabricmc.yarn.1_21_4.1.21.4+build.8-v2.jar
+Compiled from "GameMessageS2CPacket.java"
+public final class net.minecraft.network.packet.s2c.play.GameMessageS2CPacket extends java.lang.Record implements net.minecraft.network.packet.Packet<net.minecraft.network.listener.ClientPlayPacketListener> {
+  public static final net.minecraft.network.codec.PacketCodec<net.minecraft.network.RegistryByteBuf, net.minecraft.network.packet.s2c.play.GameMessageS2CPacket> CODEC;
+  public net.minecraft.network.packet.s2c.play.GameMessageS2CPacket(net.minecraft.text.Text, boolean);
+  public net.minecraft.network.packet.PacketType<net.minecraft.network.packet.s2c.play.GameMessageS2CPacket> getPacketType();
+  public void apply(net.minecraft.network.listener.ClientPlayPacketListener);
+  public boolean isWritingErrorSkippable();
+  public final java.lang.String toString();
+  public final int hashCode();
+  public final boolean equals(java.lang.Object);
+  public net.minecraft.text.Text content();
+  public boolean overlay();
+  public void apply(net.minecraft.network.listener.PacketListener);
+  static {};
+}
