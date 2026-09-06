@@ -2,6 +2,8 @@ package fun.wonderful.client.modules.impl.render;
 
 import java.awt.Color;
 
+import fun.wonderful.api.events.EventLink;
+import fun.wonderful.api.events.implement.Event3DRender;
 import fun.wonderful.api.utils.color.ColorUtils;
 import fun.wonderful.api.utils.render.sky.CosmicSkyRenderer;
 import fun.wonderful.client.modules.Module;
@@ -45,9 +47,14 @@ public class ShaderSky extends Module {
         return INSTANCE != null && INSTANCE.isEnable();
     }
 
-    /** Рисует шейдер-небо (вызов из SkyRenderingMixin). */
-    public static void renderCosmic() {
-        CosmicSkyRenderer.render(viewIndex(), INSTANCE.speed.get(), INSTANCE.intensity.get() / 100f);
+    /**
+     * Рисует шейдер-небо ПОСЛЕ рендера мира: квад на дальней плоскости
+     * проходит тест глубины только там, где небо — мир и сущности поверх.
+     */
+    @EventLink
+    public void onRender3D(Event3DRender event) {
+        if (!isEnable() || mc.player == null || mc.world == null) return;
+        CosmicSkyRenderer.render(viewIndex(), speed.get(), intensity.get() / 100f);
     }
 
     /**
@@ -60,6 +67,6 @@ public class ShaderSky extends Module {
         float hue = FOG_HUE[idx] + 0.07f * (float) Math.sin(ms / 34000.0);
         float bri = FOG_BRI[idx] + 0.08f * (float) Math.sin(ms / 21000.0 + 1.7);
         int cosmic = Color.HSBtoRGB(hue, 0.72f, bri);
-        return ColorUtils.interpolateColor(vanilla, cosmic, 0.45f);
+        return ColorUtils.interpolateColor(vanilla, cosmic, 0.32f);
     }
 }

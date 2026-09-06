@@ -19,7 +19,6 @@
   "IEntity",
   "IMinecraftClientAccessor",
   "ILivingEntityAccessor",
-  "SkyRenderingMixin",
   "ClientWorldMixin"
  ],
  "injectors": {
