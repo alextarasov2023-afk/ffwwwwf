@@ -18,7 +18,9 @@
   "ICameraAccessor",
   "IEntity",
   "IMinecraftClientAccessor",
-  "ILivingEntityAccessor"
+  "ILivingEntityAccessor",
+  "SkyRenderingMixin",
+  "ClientWorldMixin"
  ],
  "injectors": {
   "defaultRequire": 1

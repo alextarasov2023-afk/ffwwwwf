@@ -1,0 +1,11 @@
+{
+  "vertex": "wonderful:core/sky/sky",
+  "fragment": "wonderful:core/sky/sky",
+  "samplers": [],
+  "uniforms": [
+    { "name": "Time", "type": "float", "count": 1, "values": [0.0] },
+    { "name": "Speed", "type": "float", "count": 1, "values": [1.0] },
+    { "name": "Intensity", "type": "float", "count": 1, "values": [0.6] },
+    { "name": "AccentColor", "type": "float", "count": 3, "values": [0.55, 0.4, 1.0] }
+  ]
+}

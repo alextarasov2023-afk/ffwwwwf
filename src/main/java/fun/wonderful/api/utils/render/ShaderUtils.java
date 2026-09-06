@@ -24,6 +24,7 @@ public class ShaderUtils implements QClient {
     public final ShaderProgramKey shadowRect = register("shadow_rect", "shadow", VertexFormats.POSITION_COLOR);
     public final ShaderProgramKey fontsMsdf = register("fonts", "fonts", VertexFormats.POSITION_TEXTURE_COLOR);
     public final ShaderProgramKey face = register("face", "face", VertexFormats.POSITION_TEXTURE_COLOR);
+    public final ShaderProgramKey cosmicSky = register("sky", "sky", VertexFormats.POSITION_TEXTURE_COLOR);
 
     private ShaderProgramKey register(String shaderNamePackage, String shaderName, VertexFormat vertexFormat) {
         return new ShaderProgramKey(Identifier.of("wonderful", "core/" + shaderNamePackage + "/" + shaderName), vertexFormat, Defines.EMPTY);

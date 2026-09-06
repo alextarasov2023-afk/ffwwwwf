@@ -38,6 +38,8 @@ public class LocalizationStorage {
         add("Player", "Player", "Гравець");
         add("Язык", "Language", "Мова");
         add("Худ", "HUD", "Худ");
+        add("Shader Sky", "Shader Sky", "Шейдер-небо");
+        add("Яркость", "Brightness", "Яскравість");
         add("Ватермарка", "Watermark", "Ватермарка");
         add("Кейбинды", "Keybinds", "Хоткеї");
         add("Клавиши", "Keystrokes", "Клавіші");

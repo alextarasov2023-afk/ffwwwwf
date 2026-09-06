@@ -18,6 +18,7 @@ import fun.wonderful.client.modules.impl.player.AutoEat;
 import fun.wonderful.client.modules.impl.player.FastPlace;
 import fun.wonderful.client.modules.impl.render.FreeLook;
 import fun.wonderful.client.modules.impl.render.Hud;
+import fun.wonderful.client.modules.impl.render.ShaderSky;
 
 @Getter
 @Setter
@@ -58,6 +59,7 @@ public class ModuleStorage implements QClient {
 
         // ===== Render =====
         list.add(Hud.INSTANCE);
+        list.add(ShaderSky.INSTANCE);
         list.add(FreeLook.INSTANCE);
 
         ModuleClass.INSTANCE.initialize();
