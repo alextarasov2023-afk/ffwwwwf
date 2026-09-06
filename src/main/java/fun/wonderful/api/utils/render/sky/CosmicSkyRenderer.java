@@ -27,7 +27,7 @@ public final class CosmicSkyRenderer implements QClient {
     private CosmicSkyRenderer() {
     }
 
-    public static void render(float speed, float intensity) {
+    public static void render(int mode, float speed, float intensity) {
         ShaderProgram program = mc.getShaderLoader().getOrCreateProgram(ShaderUtils.cosmicSky);
 
         RenderSystem.disableDepthTest();
@@ -39,6 +39,7 @@ public final class CosmicSkyRenderer implements QClient {
         if ((u = program.getUniform("Time")) != null) {
             u.set((System.currentTimeMillis() / 1000f) % 1800f);
         }
+        if ((u = program.getUniform("Mode")) != null) u.set((float) mode);
         if ((u = program.getUniform("Speed")) != null) u.set(speed);
         if ((u = program.getUniform("Intensity")) != null) u.set(intensity);
 

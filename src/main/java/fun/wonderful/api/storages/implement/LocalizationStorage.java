@@ -39,6 +39,11 @@ public class LocalizationStorage {
         add("Язык", "Language", "Мова");
         add("Худ", "HUD", "Худ");
         add("Shader Sky", "Shader Sky", "Шейдер-небо");
+        add("Вид", "View", "Вид");
+        add("Туманность", "Nebula", "Туманність");
+        add("Аврора", "Aurora", "Аврора");
+        add("Звездопад", "Starfall", "Зорепад");
+        add("Галактика", "Galaxy", "Галактика");
         add("Яркость", "Brightness", "Яскравість");
         add("Ватермарка", "Watermark", "Ватермарка");
         add("Кейбинды", "Keybinds", "Хоткеї");
