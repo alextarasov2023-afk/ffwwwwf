@@ -47,6 +47,11 @@ public class ShaderSky extends Module {
 
 
 
+    /** Рисует шейдер-небо (прямой вызов из WorldRendererMixin/SkyRenderingMixin). */
+    public static void renderCosmic() {
+        CosmicSkyRenderer.render(viewIndex(), INSTANCE.speed.get(), INSTANCE.intensity.get() / 100f);
+    }
+
     /**
      * Цвет неба/тумана в тон туманности: медленно плывущий космический оттенок,
      * чтобы туман горизонта не спорил с шейдером.
