@@ -87,12 +87,6 @@ public class Triggerbot extends Module {
 
     // ===== SprintControl =====
 
-    /**
-     * Серверный спринт: ваниль шлёт START/STOP_SPRINTING по факту
-     * isSprinting() в конце прошлого тика — снимаем значение в начале тика.
-     */
-    private boolean serverSprint;
-
     /** Тиков ещё держать сброс спринта. */
     private int sprintResetTicks;
 
@@ -100,7 +94,6 @@ public class Triggerbot extends Module {
     private boolean hasReset;
 
     private void sprintControlTick() {
-        serverSprint = mc.player.isSprinting();
         if (sprintResetTicks > 0) {
             hasReset = true;
             mc.player.setSprinting(false);
@@ -134,13 +127,6 @@ public class Triggerbot extends Module {
             mc.options.sprintKey.setPressed(false);
             mc.player.setSprinting(false);
         }
-    }
-
-    /** Спринт ли видит сервер прямо сейчас (для валидации крит-удара). */
-    private boolean isServerSprinting() {
-        return serverSprint
-                && !mc.player.isGliding()
-                && !mc.player.isTouchingWater();
     }
 
     // ===== TriggerClicker =====
@@ -191,13 +177,30 @@ public class Triggerbot extends Module {
         // Дистанция удара: реальное расстояние от глаз до хитбокса
         if (boxDistance(entity) > reach.get()) return;
 
-        // Packet: в падении бьём сразу — всегда крит, без остановки и сброса спринта
-        // (кулдаун всё равно уважаем — иначе удар улетал бы каждый тик)
-        if (isPacketSprint() && canCrit() && cooldownPassed()) {
+        boolean falling = canCrit();
+
+        // ===== ПАДЕНИЕ = крит: бьём сразу по готовности кулдауна =====
+        // Никаких ожиданий серверного спринта: если клиент не спринтует,
+        // сервер уже получил STOP_SPRINTING в прошлом тике — удар критовый.
+        if (falling && cooldownPassed()) {
+            if (isLegitSprint()) {
+                // Легитный: спринт не трогаем — пока спринтуешь, ждём
+                if (mc.player.isSprinting()) return;
+                attack(entity);
+                return;
+            }
+            if (mc.player.isSprinting() && !isPacketSprint()) {
+                // Спринт ещё держится (падение началось со спринтом):
+                // сбрасываем сейчас — удар уйдёт следующим тиком
+                preCritical();
+                return;
+            }
+            // Packet: бьём не останавливаясь; Обычный: спринт уже сброшен
             attack(entity);
             return;
         }
 
+        // ===== Земля / взлёт =====
         if (canAttack() || hasDistanceFix()) {
             preCritical();
         }
@@ -212,10 +215,10 @@ public class Triggerbot extends Module {
             return;
         }
 
-        // Обычный/Packet на земле: бьём, когда сервер уже не видит спринта
-        if (!isServerSprinting()) {
-            attack(entity);
-        }
+        // Обычный: спринт ещё не сброшен — удар следующим тиком
+        if (mc.player.isSprinting()) return;
+
+        attack(entity);
     }
 
     /**
